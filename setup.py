@@ -16,8 +16,8 @@ from setuptools import setup, find_packages
 version = '0.20.0'
 
 
-if sys.version_info < (3, 3):
-    sys.stderr.write("This package requires Python 3.3 or newer. "
+if sys.version_info < (3, 4):
+    sys.stderr.write("This package requires Python 3.4 or newer. "
                      "Yours is " + sys.version + os.linesep)
     sys.exit(1)
 
@@ -29,7 +29,6 @@ requires = [
     'argparse',
     'alembic',
     'graphviz',
-    'nose',  # for unittest during the blok install
     'lxml',
     'six',
     'PyYAML',
@@ -68,11 +67,10 @@ setup(
     zip_safe=False,
     include_package_data=True,
     install_requires=requires,
-    tests_require=requires + ['nose'],
+    tests_require=requires + ['pytest'],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
-        'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',

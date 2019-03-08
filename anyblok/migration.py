@@ -46,7 +46,7 @@ class MigrationReport:
     def table_is_added(self, table):
         for action in self.actions:
             if action[0] == 'add_table' and action[1] is table:
-                    return True
+                return True
 
         return False
 
@@ -691,7 +691,7 @@ class MigrationConstraintUnique:
     def add(self, *columns):
         """ Add the constraint
 
-        :param \*column: list of column name
+        :param *columns: list of column name
         :rtype: MigrationConstraintUnique instance
         :exception: MigrationException
         """
@@ -743,7 +743,7 @@ class MigrationConstraintPrimaryKey:
     def add(self, *columns):
         """ Add the constraint
 
-        :param \*column: list of column name
+        :param *columns: list of column name
         :rtype: MigrationConstraintPrimaryKey instance
         :exception: MigrationException
         """
@@ -810,7 +810,8 @@ class MigrationIndex:
     def add(self, *columns, **kwargs):
         """ Add the constraint
 
-        :param \*column: list of column name
+        :param *columns: list of column name
+        :param **kwargs: other attribute fir l __init__
         :rtype: MigrationIndex instance
         :exception: MigrationException
         """
@@ -892,7 +893,7 @@ class MigrationTable:
     def index(self, *columns, **kwargs):
         """ Get index
 
-        :param \*columns: List of the column's name
+        :param *columns: List of the column's name
         :rtype: MigrationIndex instance
         """
         return MigrationIndex(self, *columns, **kwargs)
@@ -900,7 +901,7 @@ class MigrationTable:
     def unique(self, name):
         """ Get unique
 
-        :param \*columns: List of the column's name
+        :param name: str name of the unique constraint
         :rtype: MigrationConstraintUnique instance
         """
         return MigrationConstraintUnique(self, name)
@@ -908,7 +909,7 @@ class MigrationTable:
     def check(self, name=None):
         """ Get check
 
-        :param \*columns: List of the column's name
+        :param name: str name of the check constraint
         :rtype: MigrationConstraintCheck instance
         """
         return MigrationConstraintCheck(self, name)
@@ -916,7 +917,6 @@ class MigrationTable:
     def primarykey(self):
         """ Get primary key
 
-        :param \*columns: List of the column's name
         :rtype: MigrationConstraintPrimaryKey instance
         """
         return MigrationConstraintPrimaryKey(self)
@@ -1001,6 +1001,32 @@ class Migration:
         diff.extend(self.detect_pk_constraint_changed(inspector))
         return diff
 
+    def check_constraint_is_same(self, reflected_constraint, constraint):
+        same_name = False
+        if constraint.name.startswith(reflected_constraint['name']):
+            same_name = True
+        else:
+            constraint_name = constraint.name.split('__')
+            reflected_constraint_name = reflected_constraint['name'].split('__')
+            if (
+                constraint_name[0] == reflected_constraint_name[0] and
+                constraint_name[1].startswith(reflected_constraint_name[1])
+            ):
+                same_name = True
+
+        if not same_name:
+            return False
+
+        if constraint.sqltext.text == reflected_constraint['sqltext']:
+            return True
+        elif (
+            constraint.sqltext.text ==
+            reflected_constraint['sqltext'].replace('"', '')
+        ):
+            return True
+
+        return False
+
     def detect_check_constraint_changed(self, inspector):
         diff = []
         for table in inspector.get_table_names():
@@ -1025,7 +1051,9 @@ class Migration:
                 todrop_ = todrop.copy()
                 for x in todrop_:
                     for y in toadd:
-                        if y.startswith(x):
+                        if self.check_constraint_is_same(
+                            reflected_constraints[x], constraints[y]
+                        ):
                             toadd.remove(y)
                             todrop.remove(x)
                             break

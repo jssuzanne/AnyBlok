@@ -522,7 +522,7 @@ class Configuration:
 
         :param application: name of the application
         :param useseparator: boolean(default False)
-        :param \**kwargs: ArgumentParser named arguments
+        :param **kwargs: ArgumentParser named arguments
         """
 
         sep = len(sys.argv)
@@ -820,14 +820,6 @@ def add_doc(group):
                        help='Detail only these models')
     group.add_argument('--doc-unwanted-models', nargs='+',
                        help='No detail these models')
-
-
-@Configuration.add('unittest', label="Unittest")
-def add_unittest(group):
-    group.add_argument('--selected-bloks', nargs='+',
-                       help="Name of the bloks to test")
-    group.add_argument('--unwanted-bloks', nargs='+',
-                       help="Name of the bloks to no test")
 
 
 @Configuration.add('logging', label="Logging")
