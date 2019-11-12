@@ -559,7 +559,7 @@ class Registry:
         query += " WHERE state in ('%s')" % "', '".join(states)
         query += """ ORDER BY "order";"""
         try:
-            res = self.execute(query).fetchall()
+            res = self.execute(query, fetchall=True)
         except (ProgrammingError, OperationalError):
             # During the first connection the database is empty
             pass
@@ -812,13 +812,18 @@ class Registry:
         return False
 
     def execute(self, *args, **kwargs):
+        fetchall = kwargs.pop('fetchall', False)
         if self.Session:
             return self.session.execute(*args, **kwargs)
         else:
             conn = None
             try:
                 conn = self.engine.connect()
-                return conn.execute(*args, **kwargs)
+                res = conn.execute(*args, **kwargs)
+                if fetchall:
+                    res = res.fetchall()
+
+                return res
             finally:
                 if conn:
                     conn.close()
@@ -1016,7 +1021,7 @@ class Registry:
             WHERE
                 (state = 'toinstall' AND name = '%s')
                 OR state = 'toupdate'""" % blok2install
-        res = self.execute(query).fetchall()
+        res = self.execute(query, fetchall=True)
         if res:
             for blok, installed_version in res:
                 b = BlokManager.get(blok)(self)
