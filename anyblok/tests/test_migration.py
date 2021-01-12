@@ -1135,7 +1135,7 @@ class TestMigrationPlugin:
 
     @pytest.mark.skipif(
         sgdb_in(['MySQL', 'MariaDB']),
-        reason='Plugin for MySQL only')
+        reason='Plugin not for MySQL only')
     def test_alter_column_type_with_plugin_4(self, registry_plugin):
         report = MigrationReport(registry_plugin.migration, [])
         report.plugins = [
