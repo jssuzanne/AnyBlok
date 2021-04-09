@@ -779,10 +779,6 @@ def add_plugins(group):
     group.add_argument('--registry-cls', dest='Registry', type=AnyBlokPlugin,
                        default='anyblok.registry:Registry',
                        help="Registry class to use")
-    group.add_argument('--migration-cls', dest='Migration',
-                       type=AnyBlokPlugin,
-                       default='anyblok.migration:Migration',
-                       help="Migration class to use")
     group.add_argument('--get-url-fnct', dest='get_url',
                        type=AnyBlokPlugin,
                        default='anyblok.config:get_url',

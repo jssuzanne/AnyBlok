@@ -1102,7 +1102,7 @@ class Registry:
             self.declarativebase.metadata.tables['system_blok'].create(
                 bind=self.connection(), checkfirst=True)
 
-        self.migration = Configuration.get('Migration', Migration)(self)
+        self.migration = Migration(self)
         query = """
             SELECT name, installed_version
             FROM system_blok
