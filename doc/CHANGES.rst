@@ -19,7 +19,7 @@
 CHANGELOG
 =========
 
-2.1.0 (unreleased)
+2.1.0 (2023-07-26)
 ------------------
 
 * Implement psycopg3 capability
