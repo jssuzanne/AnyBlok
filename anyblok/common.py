@@ -7,7 +7,6 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 import sys
-from functools import lru_cache
 
 from sqlalchemy import text
 from sqlalchemy.exc import InvalidRequestError
@@ -150,33 +149,6 @@ class TypeList(list):
 
         if newbases:
             super(TypeList, self).extend(newbases)
-
-
-def apply_cache(attr, method, registry, namespace, base, properties):
-    """Find the cached methods in the base to apply the real cache decorator.
-
-    :param attr: name of the attribute
-    :param method: method pointer
-    :param registry: the current registry
-    :param namespace: the namespace of the model
-    :rtype: new base
-    """
-    if hasattr(method, "is_cache_method") and method.is_cache_method is True:
-        cmodel = registry.caches.setdefault(namespace, {attr: []})
-        cattr = cmodel.setdefault(attr, [])
-
-        @lru_cache(maxsize=method.size)
-        def wrapper(*args, **kwargs):
-            return method(*args, **kwargs)
-
-        wrapper.indentify = (namespace, attr)
-        cattr.append(wrapper)
-        if method.is_cache_classmethod:
-            return {attr: classmethod(wrapper)}
-        else:
-            return {attr: wrapper}
-
-    return {}
 
 
 DATABASES_CACHED = {}

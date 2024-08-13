@@ -151,38 +151,50 @@ class Declarations:
             return wrapper
 
 
-def cache(size=128):
-    autodoc = """
-    **Cached method** with size=%(size)s
-    """ % dict(
-        size=size
-    )
+class cache:
+    def __init__(self, size=128):
+        self.size = size
 
-    def wrapper(method):
-        add_autodocs(method, autodoc)
-        method.is_cache_method = True
-        method.is_cache_classmethod = False
-        method.size = size
-        return method
+    def __call__(self, func):
+        func.is_clasmethod = False
+        func.size = self.size
+        self.__func__ = func
+        return self
 
-    return wrapper
+    def __get__(self, obj, cls=None):
+
+        def wrapper(*args, **kwargs):
+            return self.__func__(obj, *args, **kwargs)
+
+        return wrapper
+
+    def __set_name__(self, owner, name):
+        if not hasattr(owner, "__declared_caches__"):
+            owner.__declared_caches__ = {}
+
+        owner.__declared_caches__[name] = self.__func__
 
 
-def classmethod_cache(size=128):
-    autodoc = """
-    **Cached classmethod** with size=%(size)s
-    """ % dict(
-        size=size
-    )
+class classmethod_cache(cache):
 
-    def wrapper(method):
-        add_autodocs(method, autodoc)
-        method.is_cache_method = True
-        method.is_cache_classmethod = True
-        method.size = size
-        return method
+    def __get__(self, obj, cls=None):
+        if cls is None:
+            cls = type(obj)
 
-    return wrapper
+        if hasattr(type(self.__func__), '__get__'):
+            # This code path was added in Python 3.9
+            # and was deprecated in Python 3.11.
+            return self.__func__.__get__(cls, cls)
+
+        def wrapper(*args, **kwargs):
+            return self.__func__(cls, *args, **kwargs)
+
+        return wrapper
+
+    def __call__(self, func):
+        super().__call__(func)
+        func.is_clasmethod = True
+        return self
 
 
 def hybrid_method(method=None):

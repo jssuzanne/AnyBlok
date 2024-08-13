@@ -85,8 +85,6 @@ class TestCache:
         Cache.insert(registry_name="Model.Test", method="method_cached")
         caches = Cache.get_invalidation()
         assert len(caches) == 1
-        cache = caches[0]
-        assert cache.indentify == ("Model.Test", "method_cached")
 
     def test_clear_invalidate_cache(self, registry_method_cached):
         registry = registry_method_cached
