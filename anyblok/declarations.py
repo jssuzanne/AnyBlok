@@ -5,6 +5,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public License,
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
+from warnings import warn
 from .common import add_autodocs
 from .mapper import MapperAdapter
 
@@ -151,11 +152,13 @@ class Declarations:
             return wrapper
 
 
-class cache:
+class Cache:
     def __init__(self, size=128):
         self.size = size
+        self.autodoc = f"**Cached method** with size={size}"
 
     def __call__(self, func):
+        add_autodocs(func, self.autodoc)
         func.is_clasmethod = False
         func.size = self.size
         self.__func__ = func
@@ -175,7 +178,15 @@ class cache:
         owner.__declared_caches__[name] = self.__func__
 
 
-class classmethod_cache(cache):
+def cache(size=128):
+    warn("cache decorator is deprecated use Cache")
+    return Cache(size=size)
+
+
+class ClassMethodCache(Cache):
+    def __init__(self, size=128):
+        super().__init__(size=size)
+        self.autodoc = f"**Cached classmethod** with size={size}"
 
     def __get__(self, obj, cls=None):
         if cls is None:
@@ -195,6 +206,11 @@ class classmethod_cache(cache):
         super().__call__(func)
         func.is_clasmethod = True
         return self
+
+
+def classmethod_cache(size=128):
+    warn("classmethod_cache decorator is deprecated use ClassMethodCache")
+    return ClassMethodCache(size=size)
 
 
 def hybrid_method(method=None):
