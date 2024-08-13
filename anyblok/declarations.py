@@ -213,23 +213,37 @@ def classmethod_cache(size=128):
     return ClassMethodCache(size=size)
 
 
-def hybrid_method(method=None):
-    autodoc = """
-    **Hybrid method**
-    """
+class HybridMethod:
+    def __init__(self, func=None):
+        self.autodoc = "**Hybrid method**"
+        if func:
+            self.__func__ = func
+            add_autodocs(func, self.autodoc)
 
-    if method:
-        add_autodocs(method, autodoc)
-        method.is_an_hybrid_method = True
-        return method
-    else:
+    def __call__(self, func):
+        add_autodocs(func, self.autodoc)
+        self.__func__ = func
+        return self
 
-        def wrapper(method):
-            add_autodocs(method, autodoc)
-            method.is_an_hybrid_method = True
-            return method
+    def __get__(self, obj, cls=None):
+        if obj is None:
+            return self.__func__
+
+        def wrapper(*args, **kwargs):
+            return self.__func__(obj, *args, **kwargs)
 
         return wrapper
+
+    def __set_name__(self, owner, name):
+        if not hasattr(owner, "__declared_hybrid_method__"):
+            owner.__declared_hybrid_method__ = set()
+
+        owner.__declared_hybrid_method__.add(name)
+
+
+def hybrid_method(func=None):
+    warn("hybrid_method decorator is deprecated use HybridMethod")
+    return HybridMethod(func=func)
 
 
 def listen(*args, **kwargs):
