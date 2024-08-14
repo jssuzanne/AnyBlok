@@ -309,23 +309,6 @@ class Model:
         :rtype: new base
         """
         new_type_properties = {}
-        for attr, method in inspect.getmembers(base):
-            if attr in ("registry", "anyblok", "_sa_registry"):
-                continue
-
-            if attr.startswith("__"):
-                continue
-
-            registry.call_plugins(
-                "transform_base_attribute",
-                attr,
-                method,
-                namespace,
-                base,
-                properties,
-                new_type_properties,
-            )
-
         registry.call_plugins(
             "transform_base", namespace, base, properties, new_type_properties
         )

@@ -7,7 +7,7 @@
 # obtain one at http://mozilla.org/MPL/2.0/.
 from warnings import warn
 from .common import add_autodocs
-from .mapper import MapperAdapter
+from .mapper import MapperAdapter, ModelMapper
 
 
 class DeclarationsException(AttributeError):
@@ -246,19 +246,66 @@ def hybrid_method(func=None):
     return HybridMethod(func=func)
 
 
+class Listen:
+
+    sqlalchemy_known_events = [
+        "after_delete",
+        "after_insert",
+        "after_update",
+        "append_result",
+        "before_delete",
+        "before_insert",
+        "before_update",
+        "create_instance",
+        "expire",
+        "first_init",
+        "init",
+        "load",
+        "refresh",
+    ]
+
+    def __init__(self, *args, **kwargs):
+        self.autodoc = (
+            f"**listen** event call with the arguments {args} and the "
+            f"positionnal argument {kwargs}"
+        )
+        self.mapper = MapperAdapter(*args, **kwargs)
+
+    def __call__(self, func):
+        add_autodocs(func, self.autodoc)
+        self.__func__ = func
+        return self
+
+    def __get__(self, obj, cls=None):
+        if cls is None:
+            cls = type(obj)
+
+        if hasattr(type(self.__func__), '__get__'):
+            # This code path was added in Python 3.9
+            # and was deprecated in Python 3.11.
+            return self.__func__.__get__(cls, cls)
+
+        def wrapper(*args, **kwargs):
+            return self.__func__(cls, *args, **kwargs)
+
+        return wrapper
+
+    def __set_name__(self, owner, name):
+        if (
+            isinstance(self.mapper, ModelMapper)
+            and self.mapper.event not in self.sqlalchemy_known_events
+        ):
+            if not hasattr(owner, "__declared_events__"):
+                owner.__declared_events__ = set()
+
+            owner.__declared_events__.add((self.mapper, name))
+        else:
+            if not hasattr(owner, "__declared_sqlalchemy_event__"):
+                owner.__declared_sqlalchemy_events__ = set()
+
+            owner.__declared_sqlalchemy_events__.add((self.mapper, name))
+
+
 def listen(*args, **kwargs):
-    autodoc = """
-    **listen** event call with the arguments %(args)r and the positionnal
-    argument %(kwargs)r
-    """ % dict(
-        args=args, kwargs=kwargs
-    )
-
-    mapper = MapperAdapter(*args, **kwargs)
-
-    def wrapper(method):
-        add_autodocs(method, autodoc)
-        mapper.listen(method)
-        return classmethod(method)
-
-    return wrapper
+    warn("listen decorator is deprecated use Listen")
+    return Listen(*args, **kwargs)

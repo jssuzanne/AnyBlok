@@ -463,21 +463,6 @@ def ModelAdapter(Model):
 
 
 class ModelMapper:
-    sqlalchemy_known_events = [
-        "after_delete",
-        "after_insert",
-        "after_update",
-        "append_result",
-        "before_delete",
-        "before_insert",
-        "before_update",
-        "create_instance",
-        "expire",
-        "first_init",
-        "init",
-        "load",
-        "refresh",
-    ]
 
     def __init__(self, mapper, event, *args, **kwargs):
         if isinstance(mapper, str):
@@ -501,15 +486,6 @@ class ModelMapper:
             return True
 
         return False
-
-    def listen(self, method):
-        if self.event in self.sqlalchemy_known_events:
-            method.is_an_sqlalchemy_event_listener = True
-            method.sqlalchemy_listener = self
-        else:
-            method.is_an_event_listener = True
-            method.model = self.model.model_name
-            method.event = self.event
 
     def mapper(self, registry, namespace, **kwargs):
         model = self.model
@@ -542,10 +518,6 @@ class ModelAttributeMapper:
             return True
 
         return False
-
-    def listen(self, method):
-        method.is_an_sqlalchemy_event_listener = True
-        method.sqlalchemy_listener = self
 
     def mapper(self, registry, namespace, usehybrid=True):
         attribute = self.attribute

@@ -44,19 +44,6 @@ class ModelPluginBase:
     #     :param transformation_properties: the transformation properties
     #     """
 
-    # def transform_base_attribute(self, attr, method, namespace, base,
-    #                              transformation_properties,
-    #                              new_type_properties):
-    #     """ transform the attribute for the final Model
-
-    #     :param attr: attribute name
-    #     :param method: method pointer of the attribute
-    #     :param namespace: the namespace of the model
-    #     :param base: One of the base of the model
-    #     :param transformation_properties: the properties of the model
-    #     :param new_type_properties: param to add in a new base if need
-    #     """
-
     # def transform_base(self, namespace, base,
     #                    transformation_properties,
     #                    new_type_properties):
