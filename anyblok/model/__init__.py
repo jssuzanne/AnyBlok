@@ -290,16 +290,6 @@ class Model:
         properties[name].anyblok_registry_name = namespace
         properties[name].field_description = field_description
         properties[name].from_model = from_model
-
-        registry.call_plugins(
-            "declare_field",
-            name,
-            field,
-            namespace,
-            properties,
-            transformation_properties,
-        )
-
         properties["loaded_columns"].append(name)
         field.update_properties(registry, namespace, name, properties)
 
