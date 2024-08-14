@@ -17,12 +17,9 @@ from sqlalchemy.orm import declared_attr
 from texttable import Texttable
 
 from anyblok import Declarations
-from anyblok.column import Column
 from anyblok.common import TypeList, anyblok_column_prefix
-from anyblok.field import Field, FieldException
 from anyblok.mapper import ModelAttribute, format_schema
 from anyblok.registry import RegistryManager
-from anyblok.relationship import RelationShip
 
 from .exceptions import ModelException
 from .factory import ModelFactory, has_sql_fields
@@ -36,10 +33,6 @@ def has_sqlalchemy_fields(base):
             return True
 
     return False
-
-
-def is_in_mro(cls, attr):
-    return cls in attr.__class__.__mro__
 
 
 def get_fields(
@@ -56,28 +49,17 @@ def get_fields(
     :param without_column: Do not return the column field
     :rtype: dict with name of the field in key and instance of Field in value
     """
-    fields = {}
-    for p in base.__dict__:
-        if p.startswith("__"):
-            continue
+    fields = base.__dict__.get('__declared_fields__', {})
+    columns = base.__dict__.get('__declared_columns__', {})
+    relationships = base.__dict__.get('__declared_relationships__', {})
+    if only_relationship:
+        return relationships
 
-        try:
-            attr = getattr(base, p)
-            if hasattr(attr, "__class__"):
-                if without_relationship and is_in_mro(RelationShip, attr):
-                    continue
+    if not without_column:
+        fields.update(columns)
 
-                if without_column and is_in_mro(Column, attr):
-                    continue
-
-                if only_relationship and not is_in_mro(RelationShip, attr):
-                    continue
-
-                if is_in_mro(Field, attr):
-                    fields[p] = attr
-
-        except FieldException:  # pragma: no cover
-            pass
+    if not without_relationship:
+        fields.update(relationships)
 
     return fields
 
