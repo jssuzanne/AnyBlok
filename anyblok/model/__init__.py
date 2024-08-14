@@ -330,34 +330,30 @@ class Model:
         if namespace in registry.loaded_namespaces_first_step:
             return registry.loaded_namespaces_first_step[namespace]
 
-        properties = {
-            "__depends__": set(),
-            "__db_schema__": format_schema(None, namespace),
-        }
+        properties = {}
         ns = registry.loaded_registries[namespace]
+        depends = set()
+        db_schema = format_schema(None, namespace)
 
-        for b in ns["bases"]:
-
+        for b in ns["bases"][::-1]:
             for b_ns in b.__anyblok_bases__:
                 if b_ns.__registry_name__.startswith("Model."):
-                    properties["__depends__"].add(b_ns.__registry_name__)
+                    depends.add(b_ns.__registry_name__)
 
-                ps = cls.load_namespace_first_step(
+                properties.update(cls.load_namespace_first_step(
                     registry, b_ns.__registry_name__
-                )
-                ps = ps.copy()
-                ps.update(properties)
-                properties.update(ps)
+                ))
 
             fields = get_fields(b)
-            for p, f in fields.items():
-                if p not in properties:
-                    properties[p] = f
+            properties.update(fields)
 
             if hasattr(b, "__db_schema__"):
-                properties["__db_schema__"] = format_schema(
-                    b.__db_schema__, namespace
-                )
+                db_schema = format_schema(b.__db_schema__, namespace)
+
+        properties.update({
+            '__depends__': depends,
+            '__db_schema__': db_schema,
+        })
 
         if "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
