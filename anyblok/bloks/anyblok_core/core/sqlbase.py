@@ -17,7 +17,7 @@ from sqlalchemy_utils.models import NOT_LOADED_REPR
 
 from anyblok.column import Column
 from anyblok.common import anyblok_column_prefix
-from anyblok.declarations import Declarations, classmethod_cache
+from anyblok.declarations import Declarations, ClassMethodCache
 from anyblok.field import FieldException
 from anyblok.mapper import FakeColumn, FakeRelationShip
 from anyblok.relationship import Many2Many, RelationShip
@@ -273,7 +273,7 @@ class SqlMixin:
         pks = self.get_primary_keys()
         return {x: getattr(self, x) for x in pks}
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def get_primary_keys(cls):
         """return the name of the primary keys of the model
 
@@ -383,7 +383,7 @@ class SqlMixin:
 
         return res
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def _fields_description(cls):
         """Return the information of the Field, Column, RelationShip"""
         res = {}
@@ -415,7 +415,7 @@ class SqlMixin:
             for field in cls.SQLAMapper.relationships
         ]
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def fields_name(cls):
         """Return the name of the Field, Column, RelationShip"""
         res = []
@@ -436,7 +436,7 @@ class SqlMixin:
 
         return res
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def get_hybrid_property_columns(cls):
         """Return the hybrid properties columns name from the Model and the
         inherited model if they come from polymorphisme
@@ -588,7 +588,7 @@ class SqlMixin:
 
         return result
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def getFieldType(cls, name):
         """Return the type of the column
 
@@ -603,7 +603,7 @@ class SqlMixin:
         """
         return cls.fields_description(name)[name]["type"]
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def find_remote_attribute_to_expire(cls, *fields):
         res = uniquedict()
         _fields = []
@@ -658,7 +658,7 @@ class SqlMixin:
 
         return res
 
-    @classmethod_cache()
+    @ClassMethodCache()
     def find_relationship(cls, *fields):
         """Find column and relation ship link with the column or relationship
         passed in fields.
