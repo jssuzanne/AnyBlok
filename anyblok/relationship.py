@@ -226,6 +226,12 @@ class RelationShip(Field):
         self.kwargs["info"]["remote_model"] = self.model.model_name
         self.backref_properties = {}
 
+    def __set_name__(self, owner, name):
+        if not hasattr(owner, "__declared_relationships__"):
+            owner.__declared_relationships__ = {}
+
+        owner.__declared_relationships__[name] = self
+
     def autodoc_get_properties(self):
         res = super(RelationShip, self).autodoc_get_properties()
         res["model"] = self.model
