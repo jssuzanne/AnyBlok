@@ -176,6 +176,11 @@ class Model:
         :param name: Name of the new registry to add it
         :param cls_: Class Interface to add in registry
         """
+        if has_sqlalchemy_fields(cls_):
+            raise ModelException(
+                "the base %r have an SQLAlchemy attribute" % cls_
+            )
+
         _registryname = parent.__registry_name__ + "." + name
         if "tablename" in kwargs:
             tablename = kwargs.pop("tablename")
@@ -341,13 +346,6 @@ class Model:
         )
 
     @classmethod
-    def raise_if_has_sqlalchemy(cls, base):
-        if has_sqlalchemy_fields(base):
-            raise ModelException(
-                "the base %r have an SQLAlchemy attribute" % base
-            )
-
-    @classmethod
     def load_namespace_first_step(cls, registry, namespace):
         """Return the properties of the declared bases for a namespace.
         This is the first step because some actions need to known all the
@@ -367,7 +365,6 @@ class Model:
         ns = registry.loaded_registries[namespace]
 
         for b in ns["bases"]:
-            cls.raise_if_has_sqlalchemy(b)
 
             for b_ns in b.__anyblok_bases__:
                 if b_ns.__registry_name__.startswith("Model."):
