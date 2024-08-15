@@ -285,6 +285,15 @@ class Model:
         :param properties: the properties of the model
         :rtype: new base
         """
+        for key in (
+            '__declared_fields__',
+            '__declared_columns__',
+            '__declared_relationships__',
+        ):
+            declare_field = base.__dict__.get(key, {}).copy()
+            declare_field.update(properties[key])
+            properties[key].update(declare_field)
+
         new_type_properties = {}
         registry.call_plugins(
             "transform_base", namespace, base, properties, new_type_properties
@@ -344,8 +353,9 @@ class Model:
                     registry, b_ns.__registry_name__
                 ))
 
-            fields = get_fields(b)
-            properties.update(fields)
+            properties.update(b.__dict__.get('__declared_relationships__', {}))
+            properties.update(b.__dict__.get('__declared_columns__', {}))
+            properties.update(b.__dict__.get('__declared_fields__', {}))
 
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
@@ -421,26 +431,19 @@ class Model:
 
     @classmethod
     def declare_all_fields(
-        cls, registry, namespace, bases, properties, transformation_properties
+        cls, registry, namespace, properties, transformation_properties
     ):
         # do in the first time the fields and columns
         # because for the relationship on the same model
         # the primary keys must exist before the relationship
         # load all the base before do relationship because primary key
         # can be come from inherit
-        for b in bases:
-            for p, f in get_fields(b, without_relationship=True).items():
-                cls.declare_field(
-                    registry,
-                    p,
-                    f,
-                    namespace,
-                    properties,
-                    transformation_properties,
-                )
-
-        for b in bases:
-            for p, f in get_fields(b, only_relationship=True).items():
+        for key in (
+            '__declared_fields__',
+            '__declared_columns__',
+            '__declared_relationships__',
+        ):
+            for p, f in transformation_properties[key].items():
                 cls.declare_field(
                     registry,
                     p,
@@ -471,18 +474,17 @@ class Model:
                         properties["__table__"] = m.__table__
                         tablename = namespace.replace(".", "_").lower()
 
-        for b in bases:
-            for p, f in get_fields(
-                b, without_relationship=True, without_column=True
-            ).items():
-                cls.declare_field(
-                    registry,
-                    p,
-                    f,
-                    namespace,
-                    properties,
-                    transformation_properties,
-                )
+        for p, f in transformation_properties[
+            '__declared_fields__'
+        ].items():
+            cls.declare_field(
+                registry,
+                p,
+                f,
+                namespace,
+                properties,
+                transformation_properties,
+            )
 
     @classmethod
     def load_namespace_second_step(
@@ -505,7 +507,11 @@ class Model:
             return [registry.loaded_namespaces[namespace]], {}
 
         if transformation_properties is None:
-            transformation_properties = {}
+            transformation_properties = {
+                '__declared_fields__': {},
+                '__declared_columns__': {},
+                '__declared_relationships__': {},
+            }
 
         bases = TypeList(cls, registry, namespace, transformation_properties)
         ns = registry.loaded_registries[namespace]
@@ -552,7 +558,6 @@ class Model:
                 cls.declare_all_fields(
                     registry,
                     namespace,
-                    bases,
                     properties,
                     transformation_properties,
                 )
