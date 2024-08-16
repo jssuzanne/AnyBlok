@@ -14,11 +14,7 @@ import pytest
 from anyblok import Declarations
 from anyblok.column import Integer, String
 from anyblok.environment import EnvironmentManager
-from anyblok.model import (
-    ModelException,
-    has_sql_fields,
-    has_sqlalchemy_fields,
-)
+from anyblok.model import ModelException, has_sql_fields, has_sqlalchemy_fields
 from anyblok.registry import RegistryManager
 from anyblok.tests.testcase import LogCapture
 

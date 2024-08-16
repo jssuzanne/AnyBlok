@@ -9,7 +9,7 @@
 import pytest
 
 from anyblok.column import Boolean, Integer, String
-from anyblok.declarations import Declarations, listen, Listen
+from anyblok.declarations import Declarations, Listen, listen
 from anyblok.model.event import ORMEventException
 
 from .conftest import init_registry

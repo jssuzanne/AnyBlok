@@ -6,6 +6,7 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 from warnings import warn
+
 from .common import add_autodocs
 from .mapper import MapperAdapter, ModelMapper
 
@@ -242,7 +243,6 @@ def hybrid_method(func=None):
 
 
 class Listen:
-
     sqlalchemy_known_events = [
         "after_delete",
         "after_insert",

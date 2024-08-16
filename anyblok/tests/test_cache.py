@@ -13,7 +13,11 @@ import pytest
 from anyblok.bloks.anyblok_core.exceptions import CacheException
 from anyblok.column import Integer
 from anyblok.declarations import (
-    Declarations, cache, classmethod_cache, Cache, ClassMethodCache
+    Cache,
+    ClassMethodCache,
+    Declarations,
+    cache,
+    classmethod_cache,
 )
 
 from .conftest import init_registry, reset_db
@@ -226,7 +230,8 @@ class TestSimpleCache:
 
     def test_deprecated(self):
         registry = self.init_registry(
-            self.add_model_with_method_deprecated_cached)
+            self.add_model_with_method_deprecated_cached
+        )
         self.check_method_cached(registry.Test, "Model.Test")
 
     def test_model2(self):
@@ -502,7 +507,8 @@ class TestClassMethodCache:
 
     def test_deprecated(self):
         registry = self.init_registry(
-            self.add_model_with_method_deprecated_cached)
+            self.add_model_with_method_deprecated_cached
+        )
         self.check_method_cached(registry.Test, "Model.Test")
 
     def test_model2(self):

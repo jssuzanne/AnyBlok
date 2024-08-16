@@ -463,7 +463,6 @@ def ModelAdapter(Model):
 
 
 class ModelMapper:
-
     def __init__(self, mapper, event, *args, **kwargs):
         if isinstance(mapper, str):
             self.model = ModelRepr(mapper)

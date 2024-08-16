@@ -6,6 +6,7 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 from functools import lru_cache
+
 from .plugins import ModelPluginBase
 
 
@@ -17,10 +18,9 @@ class CachePlugin(ModelPluginBase):
         super(CachePlugin, self).__init__(registry)
 
     def transform_base(
-        self, namespace, base, transformation_properties,
-        new_type_properties
+        self, namespace, base, transformation_properties, new_type_properties
     ):
-        if hasattr(base, '__declared_caches__'):
+        if hasattr(base, "__declared_caches__"):
             cache = self.registry.caches.setdefault(namespace, {})
             for method_name, method in base.__declared_caches__.items():
                 entry = cache.setdefault(method_name, [])
@@ -31,8 +31,9 @@ class CachePlugin(ModelPluginBase):
                 else:
                     new_type_properties[method_name] = wrapper
 
-    def after_model_construction(self, base, namespace,
-                                 transformation_properties):
+    def after_model_construction(
+        self, base, namespace, transformation_properties
+    ):
         for dep in base.__depends__:
             if dep in self.registry.caches:
                 cache = self.registry.caches.setdefault(namespace, {})

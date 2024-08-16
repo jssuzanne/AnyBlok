@@ -22,10 +22,9 @@ class EventPlugin(ModelPluginBase):
         super(EventPlugin, self).__init__(registry)
 
     def transform_base(
-        self, namespace, base, transformation_properties,
-        new_type_properties
+        self, namespace, base, transformation_properties, new_type_properties
     ):
-        if hasattr(base, '__declared_events__'):
+        if hasattr(base, "__declared_events__"):
             events = self.registry.events
             for mapper, attr in base.__declared_events__:
                 model = mapper.model.model_name
@@ -41,10 +40,9 @@ class EventPlugin(ModelPluginBase):
 
 class SQLAlchemyEventPlugin(ModelPluginBase):
     def transform_base(
-        self, namespace, base, transformation_properties,
-        new_type_properties
+        self, namespace, base, transformation_properties, new_type_properties
     ):
-        if hasattr(base, '__declared_sqlalchemy_events__'):
+        if hasattr(base, "__declared_sqlalchemy_events__"):
             for mapper, attr in base.__declared_sqlalchemy_events__:
                 self.registry._sqlalchemy_known_events.append(
                     (

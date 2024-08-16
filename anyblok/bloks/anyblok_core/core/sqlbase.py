@@ -17,7 +17,7 @@ from sqlalchemy_utils.models import NOT_LOADED_REPR
 
 from anyblok.column import Column
 from anyblok.common import anyblok_column_prefix
-from anyblok.declarations import Declarations, ClassMethodCache
+from anyblok.declarations import ClassMethodCache, Declarations
 from anyblok.field import FieldException
 from anyblok.mapper import FakeColumn, FakeRelationShip
 from anyblok.relationship import Many2Many, RelationShip

@@ -8,7 +8,7 @@
 import pytest
 
 from anyblok.column import Integer
-from anyblok.declarations import Declarations, hybrid_method, HybridMethod
+from anyblok.declarations import Declarations, HybridMethod, hybrid_method
 
 from .conftest import init_registry
 

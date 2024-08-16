@@ -10,7 +10,7 @@ from os.path import isfile, join
 
 from anyblok.blok import BlokManager, BlokManagerException, UndefinedBlok
 from anyblok.column import Integer, Selection, String
-from anyblok.declarations import Declarations, ClassMethodCache, Listen
+from anyblok.declarations import ClassMethodCache, Declarations, Listen
 from anyblok.field import Function
 from anyblok.version import parse_version
 

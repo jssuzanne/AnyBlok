@@ -23,18 +23,17 @@ class HybridMethodPlugin(ModelPluginBase):
             transformation_properties["hybrid_method"] = set()
 
     def transform_base(
-        self, namespace, base, transformation_properties,
-        new_type_properties
+        self, namespace, base, transformation_properties, new_type_properties
     ):
-        if hasattr(base, '__declared_hybrid_method__'):
-            s = transformation_properties['hybrid_method'].union(
-                base.__declared_hybrid_method__)
-            transformation_properties['hybrid_method'] = s
+        if hasattr(base, "__declared_hybrid_method__"):
+            s = transformation_properties["hybrid_method"].union(
+                base.__declared_hybrid_method__
+            )
+            transformation_properties["hybrid_method"] = s
 
     def after_model_construction(
         self, base, namespace, transformation_properties
     ):
-
         def apply_wrapper(attr):
             def wrapper(self, *args, **kwargs):
                 if self is base:

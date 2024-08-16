@@ -46,9 +46,9 @@ def autodoc_fields(declaration_cls, model_cls):  # pragma: no cover
 
     rows = [["Fields", ""]]
     fields = {}
-    fields.update(model_cls.__dict__.get('__declared_fields__', {}))
-    fields.update(model_cls.__dict__.get('__declared_columns__', {}))
-    fields.update(model_cls.__dict__.get('__declared_relationships__', {}))
+    fields.update(model_cls.__dict__.get("__declared_fields__", {}))
+    fields.update(model_cls.__dict__.get("__declared_columns__", {}))
+    fields.update(model_cls.__dict__.get("__declared_relationships__", {}))
     rows.extend([x, y.autodoc()] for x, y in fields.items())
     table = Texttable(max_width=0)
     table.set_cols_valign(["m", "t"])
@@ -261,9 +261,9 @@ class Model:
         :rtype: new base
         """
         for key in (
-            '__declared_fields__',
-            '__declared_columns__',
-            '__declared_relationships__',
+            "__declared_fields__",
+            "__declared_columns__",
+            "__declared_relationships__",
         ):
             declare_field = base.__dict__.get(key, {}).copy()
             declare_field.update(properties[key])
@@ -324,21 +324,25 @@ class Model:
                 if b_ns.__registry_name__.startswith("Model."):
                     depends.add(b_ns.__registry_name__)
 
-                properties.update(cls.load_namespace_first_step(
-                    registry, b_ns.__registry_name__
-                ))
+                properties.update(
+                    cls.load_namespace_first_step(
+                        registry, b_ns.__registry_name__
+                    )
+                )
 
-            properties.update(b.__dict__.get('__declared_relationships__', {}))
-            properties.update(b.__dict__.get('__declared_columns__', {}))
-            properties.update(b.__dict__.get('__declared_fields__', {}))
+            properties.update(b.__dict__.get("__declared_relationships__", {}))
+            properties.update(b.__dict__.get("__declared_columns__", {}))
+            properties.update(b.__dict__.get("__declared_fields__", {}))
 
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
 
-        properties.update({
-            '__depends__': depends,
-            '__db_schema__': db_schema,
-        })
+        properties.update(
+            {
+                "__depends__": depends,
+                "__db_schema__": db_schema,
+            }
+        )
 
         if "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
@@ -414,9 +418,9 @@ class Model:
         # load all the base before do relationship because primary key
         # can be come from inherit
         for key in (
-            '__declared_fields__',
-            '__declared_columns__',
-            '__declared_relationships__',
+            "__declared_fields__",
+            "__declared_columns__",
+            "__declared_relationships__",
         ):
             for p, f in transformation_properties[key].items():
                 cls.declare_field(
@@ -449,9 +453,7 @@ class Model:
                         properties["__table__"] = m.__table__
                         tablename = namespace.replace(".", "_").lower()
 
-        for p, f in transformation_properties[
-            '__declared_fields__'
-        ].items():
+        for p, f in transformation_properties["__declared_fields__"].items():
             cls.declare_field(
                 registry,
                 p,
@@ -483,9 +485,9 @@ class Model:
 
         if transformation_properties is None:
             transformation_properties = {
-                '__declared_fields__': {},
-                '__declared_columns__': {},
-                '__declared_relationships__': {},
+                "__declared_fields__": {},
+                "__declared_columns__": {},
+                "__declared_relationships__": {},
             }
 
         bases = TypeList(cls, registry, namespace, transformation_properties)
