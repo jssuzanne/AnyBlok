@@ -152,6 +152,19 @@ class Declarations:
             return wrapper
 
 
+class MethodType:
+    "Emulate PyMethod_Type in Objects/classobject.c"
+
+    def __init__(self, func, obj):
+        self.__func__ = func
+        self.__self__ = obj
+
+    def __call__(self, *args, **kwargs):
+        func = self.__func__
+        obj = self.__self__
+        return func(obj, *args, **kwargs)
+
+
 class Cache:
     def __init__(self, size=128):
         self.size = size
@@ -165,11 +178,7 @@ class Cache:
         return self
 
     def __get__(self, obj, cls=None):
-
-        def wrapper(*args, **kwargs):
-            return self.__func__(obj, *args, **kwargs)
-
-        return wrapper
+        return MethodType(self.__func__, obj)
 
     def __set_name__(self, owner, name):
         if not hasattr(owner, "__declared_caches__"):
@@ -189,18 +198,7 @@ class ClassMethodCache(Cache):
         self.autodoc = f"**Cached classmethod** with size={size}"
 
     def __get__(self, obj, cls=None):
-        if cls is None:
-            cls = type(obj)
-
-        if hasattr(type(self.__func__), '__get__'):
-            # This code path was added in Python 3.9
-            # and was deprecated in Python 3.11.
-            return self.__func__.__get__(cls, cls)
-
-        def wrapper(*args, **kwargs):
-            return self.__func__(cls, *args, **kwargs)
-
-        return wrapper
+        return MethodType(self.__func__, cls or type(obj))
 
     def __call__(self, func):
         super().__call__(func)
@@ -229,10 +227,7 @@ class HybridMethod:
         if obj is None:
             return self.__func__
 
-        def wrapper(*args, **kwargs):
-            return self.__func__(obj, *args, **kwargs)
-
-        return wrapper
+        return MethodType(self.__func__, obj)
 
     def __set_name__(self, owner, name):
         if not hasattr(owner, "__declared_hybrid_method__"):
@@ -277,18 +272,7 @@ class Listen:
         return self
 
     def __get__(self, obj, cls=None):
-        if cls is None:
-            cls = type(obj)
-
-        if hasattr(type(self.__func__), '__get__'):
-            # This code path was added in Python 3.9
-            # and was deprecated in Python 3.11.
-            return self.__func__.__get__(cls, cls)
-
-        def wrapper(*args, **kwargs):
-            return self.__func__(cls, *args, **kwargs)
-
-        return wrapper
+        return MethodType(self.__func__, cls or type(obj))
 
     def __set_name__(self, owner, name):
         if (

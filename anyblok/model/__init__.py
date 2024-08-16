@@ -35,35 +35,6 @@ def has_sqlalchemy_fields(base):
     return False
 
 
-def get_fields(
-    base,
-    without_relationship=False,
-    only_relationship=False,
-    without_column=False,
-):
-    """Return the fields for a model
-
-    :param base: Model Class
-    :param without_relationship: Do not return the relationship field
-    :param only_relationship: return only the relationship field
-    :param without_column: Do not return the column field
-    :rtype: dict with name of the field in key and instance of Field in value
-    """
-    fields = base.__dict__.get('__declared_fields__', {})
-    columns = base.__dict__.get('__declared_columns__', {})
-    relationships = base.__dict__.get('__declared_relationships__', {})
-    if only_relationship:
-        return relationships
-
-    if not without_column:
-        fields.update(columns)
-
-    if not without_relationship:
-        fields.update(relationships)
-
-    return fields
-
-
 def autodoc_fields(declaration_cls, model_cls):  # pragma: no cover
     """Produces autodocumentation table for the fields.
 
@@ -74,7 +45,11 @@ def autodoc_fields(declaration_cls, model_cls):  # pragma: no cover
         return ""
 
     rows = [["Fields", ""]]
-    rows.extend([x, y.autodoc()] for x, y in get_fields(model_cls).items())
+    fields = {}
+    fields.update(model_cls.__dict__.get('__declared_fields__', {}))
+    fields.update(model_cls.__dict__.get('__declared_columns__', {}))
+    fields.update(model_cls.__dict__.get('__declared_relationships__', {}))
+    rows.extend([x, y.autodoc()] for x, y in fields.items())
     table = Texttable(max_width=0)
     table.set_cols_valign(["m", "t"])
     table.add_rows(rows)
