@@ -115,12 +115,6 @@ class SqlMixin:
         return {}
 
     @classmethod
-    def get_all_registry_names(cls):
-        models = list(cls.__depends__)
-        models.insert(0, cls.__registry_name__)
-        return models
-
-    @classmethod
     def query(cls, *elements):
         """Facility to do a SqlAlchemy query::
 
@@ -281,8 +275,9 @@ class SqlMixin:
         return list(
             {
                 column.key
-                for model in cls.get_all_registry_names()
-                for column in cls.anyblok.get(model).SQLAMapper.primary_key
+                for column in cls.anyblok.get(
+                    cls.__registry_name__
+                ).SQLAMapper.primary_key
             }
         )
 
@@ -392,10 +387,6 @@ class SqlMixin:
     def _fields_description(cls):
         """Return the information of the Field, Column, RelationShip"""
         res = {}
-        for registry_name in cls.__depends__:
-            Depend = cls.anyblok.get(registry_name)
-            res.update(Depend._fields_description())
-
         res.update(cls._fields_description_field())
         res.update(cls._fields_description_column())
         res.update(cls._fields_description_relationship())
@@ -424,10 +415,6 @@ class SqlMixin:
     def fields_name(cls):
         """Return the name of the Field, Column, RelationShip"""
         res = []
-        for registry_name in cls.__depends__:
-            Depend = cls.anyblok.get(registry_name)
-            res.extend(Depend.fields_name())
-
         res.extend(cls._fields_name_field())
         res.extend(cls._fields_name_column())
         res.extend(cls._fields_name_relationship())

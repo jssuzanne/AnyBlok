@@ -20,8 +20,9 @@ class CachePlugin(ModelPluginBase):
     def transform_base(
         self, namespace, base, transformation_properties, new_type_properties
     ):
+        cache = self.registry.caches.setdefault(namespace, {})
+        print(namespace, base)
         if hasattr(base, "__declared_caches__"):
-            cache = self.registry.caches.setdefault(namespace, {})
             for method_name, method in base.__declared_caches__.items():
                 entry = cache.setdefault(method_name, [])
                 wrapper = lru_cache(maxsize=method.size)(method)
