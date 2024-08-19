@@ -15,12 +15,11 @@ from sqlalchemy.orm.base import LoaderCallableStatus
 from sqlalchemy.orm.session import object_state
 from sqlalchemy_utils.models import NOT_LOADED_REPR
 
-from anyblok.column import Column
 from anyblok.common import anyblok_column_prefix
 from anyblok.declarations import ClassMethodCache, Declarations
 from anyblok.field import FieldException
 from anyblok.mapper import FakeColumn, FakeRelationShip
-from anyblok.relationship import Many2Many, RelationShip
+from anyblok.relationship import Many2Many
 
 from ..exceptions import SqlBaseException
 
@@ -573,7 +572,9 @@ class SqlMixin:
             if field_property is None:
                 # it is the case of field function (hyprid property)
                 result[field] = field_value
-            elif field_value is None or type(field_property) == ColumnProperty:
+            elif field_value is None or isinstance(
+                field_property, ColumnProperty
+            ):
                 # If value is None, then do not go any further whatever
                 # the column property tells you.
                 result[field] = field_value
