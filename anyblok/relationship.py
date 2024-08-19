@@ -951,7 +951,7 @@ class Many2Many(RelationShip):
             m2m_columns_ = []
             first_step = registry.loaded_namespaces_first_step[
                 self.join_model.model_name
-            ]
+            ]["relationships"]
             for col in m2m_columns:
                 if col not in first_step:
                     m2m_columns_.append(col)  # pragma: no cover
@@ -1097,7 +1097,9 @@ class Many2Many(RelationShip):
 
     def get_back_populate_relationship(self, registry, join_table):
         remote_model = self.model.model_name
-        lnfs = registry.loaded_namespaces_first_step[remote_model]
+        lnfs = registry.loaded_namespaces_first_step[remote_model][
+            "relationships"
+        ]
         for fieldname in lnfs:
             field = lnfs[fieldname]
             if not isinstance(field, Many2Many):
@@ -1116,7 +1118,9 @@ class Many2Many(RelationShip):
         if not self.join_model:
             return
 
-        lnfs = registry.loaded_namespaces_first_step[self.join_model.model_name]
+        lnfs = registry.loaded_namespaces_first_step[
+            self.join_model.model_name
+        ]["relationships"]
         fieldnames = []
         for fieldname in lnfs:
             field = lnfs[fieldname]
@@ -1414,7 +1418,9 @@ class One2Many(RelationShip):
 
     def get_back_populate_relationship(self, registry, namespace):
         remote_model = self.model.model_name
-        lnfs = registry.loaded_namespaces_first_step[remote_model]
+        lnfs = registry.loaded_namespaces_first_step[remote_model][
+            "relationships"
+        ]
         fieldnames = []
         for fieldname in lnfs:
             field = lnfs[fieldname]

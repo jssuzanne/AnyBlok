@@ -290,7 +290,9 @@ class SqlMixin:
     @classmethod
     def _fields_description_field(cls):
         res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
+        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
+            "fields"
+        ]
         for cname in cls.loaded_fields:
             ftype = fsp[cname].__class__.__name__
             res[cname] = dict(
@@ -310,7 +312,9 @@ class SqlMixin:
     @classmethod
     def _fields_description_column(cls):
         res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
+        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
+            "columns"
+        ]
         for field in cls.SQLAMapper.columns:
             if field.key not in fsp:
                 continue
@@ -333,7 +337,9 @@ class SqlMixin:
     @classmethod
     def _fields_description_relationship(cls):
         res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
+        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
+            "relationships"
+        ]
         for field in cls.SQLAMapper.relationships:
             key = (
                 field.key[len(anyblok_column_prefix) :]
@@ -608,53 +614,47 @@ class SqlMixin:
         res = uniquedict()
         _fields = []
         _fields.extend(fields)
-        model = get_model_information(cls.anyblok, cls.__registry_name__)
+        Model = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
         while _fields:
             field = _fields.pop()
             field = field if isinstance(field, str) else field.name
-            _field = model[field]
 
-            if isinstance(_field, (Column, FakeColumn)):
+            if field in Model["columns"]:
                 _fields.extend(
                     x
-                    for x, y in model.items()
-                    if (
-                        isinstance(y, RelationShip)
-                        and not isinstance(y, Many2Many)
-                    )
+                    for x, y in Model["relationships"].items()
+                    if not isinstance(y, Many2Many)
                     for mapper in y.column_names
                     if mapper.attribute_name == field
                 )
+                _field = Model["columns"][field]
                 if (
-                    isinstance(_field, Column) and _field.foreign_key
+                    not isinstance(_field, FakeColumn) and _field.foreign_key
                 ):  # pragma: no cover
                     rmodel = cls.anyblok.loaded_namespaces_first_step[
                         _field.foreign_key.model_name
                     ]
                     for rc in [
                         x
-                        for x, y in rmodel.items()
-                        if isinstance(y, RelationShip)
+                        for x, y in rmodel["relationships"].items()
                         for mapper in y.remote_columns
                         if mapper.attribute_name == field
                     ]:
-                        rfield = rmodel[rc]
+                        rfield = rmodel["relationships"][rc]
                         if isinstance(rfield, FakeRelationShip):
                             res.add_in_res(rfield.mapper.attribute_name, [rc])
-                        elif (
-                            isinstance(rfield, RelationShip)
-                            and "backref" in rfield.kwargs
-                        ):
+                        elif "backref" in rfield.kwargs:
                             res.add_in_res(rfield.kwargs["backref"][0], [rc])
 
-            elif (
-                isinstance(_field, RelationShip)
-                and not isinstance(_field, Many2Many)
-                and "backref" in _field.kwargs
-            ):
-                res.add_in_res(field, [_field.kwargs["backref"][0]])
-            elif isinstance(_field, FakeRelationShip):  # pragma: no cover
-                res.add_in_res(field, [_field.mapper.attribute_name])
+            elif field in Model["relationships"]:
+                _field = Model["relationships"][field]
+                if isinstance(_field, FakeRelationShip):  # pragma: no cover
+                    res.add_in_res(field, [_field.mapper.attribute_name])
+                elif (
+                    not isinstance(_field, Many2Many)
+                    and "backref" in _field.kwargs
+                ):
+                    res.add_in_res(field, [_field.kwargs["backref"][0]])
 
         return res
 
@@ -669,7 +669,7 @@ class SqlMixin:
         res = []
         _fields = []
         _fields.extend(fields)
-        model = get_model_information(cls.anyblok, cls.__registry_name__)
+        Model = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
         while _fields:
             field = _fields.pop()
             if not isinstance(field, str):
@@ -678,37 +678,22 @@ class SqlMixin:
             if field in res:
                 continue
 
-            _field = model[field]
             res.append(field)
-            if isinstance(_field, (Column, FakeColumn)):
+            if field in Model["columns"]:
                 _fields.extend(
                     x
-                    for x, y in model.items()
-                    if (
-                        isinstance(y, RelationShip)
-                        and not isinstance(y, Many2Many)
-                    )
+                    for x, y in Model["relationships"].items()
+                    if not isinstance(y, Many2Many)
                     for mapper in y.column_names
                     if mapper.attribute_name == field
                 )
-            elif isinstance(_field, RelationShip) and not isinstance(
-                _field, Many2Many
-            ):
-                for mapper in _field.column_names:
-                    _fields.append(mapper.attribute_name)
+            elif field in Model["relationships"]:
+                _field = Model["relationships"][field]
+                if not isinstance(_field, Many2Many):
+                    for mapper in _field.column_names:
+                        _fields.append(mapper.attribute_name)
 
         return res
-
-
-def get_model_information(anyblok, registry_name):
-    model = anyblok.loaded_namespaces_first_step[registry_name]
-    for depend in model["__depends__"]:
-        if depend != registry_name:
-            for x, y in get_model_information(anyblok, depend).items():
-                if x not in model:
-                    model[x] = y  # pragma: no cover
-
-    return model
 
 
 @Declarations.register(Declarations.Core)
@@ -810,7 +795,9 @@ class SqlBase(SqlMixin):
             model = self.anyblok.loaded_namespaces_first_step[
                 self.__registry_name__
             ]
-            fields = model.keys()
+            fields = []
+            fields.extend(x for x in model["columns"])
+            fields.extend(x for x in model["relationships"])
             mappers = self.__class__.find_remote_attribute_to_expire(*fields)
             self.expire_relationship_mapped(mappers)
             self.anyblok.session.delete(self)

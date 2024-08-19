@@ -318,21 +318,28 @@ class Model:
         ns = registry.loaded_registries[namespace]
         depends = set()
         db_schema = format_schema(None, namespace)
+        fields = {}
+        columns = {}
+        relationships = {}
 
         for b in ns["bases"][::-1]:
             for b_ns in b.__anyblok_bases__:
                 if b_ns.__registry_name__.startswith("Model."):
                     depends.add(b_ns.__registry_name__)
 
-                properties.update(
-                    cls.load_namespace_first_step(
-                        registry, b_ns.__registry_name__
-                    )
+                lnfs = cls.load_namespace_first_step(
+                    registry, b_ns.__registry_name__
                 )
 
-            properties.update(b.__dict__.get("__declared_relationships__", {}))
-            properties.update(b.__dict__.get("__declared_columns__", {}))
-            properties.update(b.__dict__.get("__declared_fields__", {}))
+                fields.update(lnfs["fields"])
+                columns.update(lnfs["columns"])
+                relationships.update(lnfs["relationships"])
+
+            fields.update(b.__dict__.get("__declared_fields__", {}))
+            columns.update(b.__dict__.get("__declared_columns__", {}))
+            relationships.update(
+                b.__dict__.get("__declared_relationships__", {})
+            )
 
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
@@ -341,6 +348,9 @@ class Model:
             {
                 "__depends__": depends,
                 "__db_schema__": db_schema,
+                "fields": fields,
+                "columns": columns,
+                "relationships": relationships,
             }
         )
 
