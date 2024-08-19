@@ -21,7 +21,6 @@ class CachePlugin(ModelPluginBase):
         self, namespace, base, transformation_properties, new_type_properties
     ):
         cache = self.registry.caches.setdefault(namespace, {})
-        print(namespace, base)
         if hasattr(base, "__declared_caches__"):
             for method_name, method in base.__declared_caches__.items():
                 entry = cache.setdefault(method_name, [])
