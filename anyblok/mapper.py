@@ -271,9 +271,6 @@ class ModelAttribute:
 
     def add_fake_relationship(self, registry, namespace, fieldname):
         Model = self.check_model_in_first_step(registry)["relationships"]
-        if self.attribute_name in Model:
-            return
-
         Model[self.attribute_name] = FakeRelationShip(
             ModelAttribute(namespace, fieldname)
         )
@@ -321,12 +318,12 @@ class ModelAttribute:
 
     def is_declared(self, registry):
         Model = self.check_model_in_first_step(registry)
-        if self.attribute_name not in Model["columns"]:
-            return False
-        if self.attribute_name not in Model["relationships"]:
-            return False
+        if self.attribute_name in Model["columns"]:
+            return True
+        if self.attribute_name in Model["relationships"]:
+            return True
 
-        return True
+        return False
 
     def native_type(self, registry):
         Model = self.check_model_in_first_step(registry)
