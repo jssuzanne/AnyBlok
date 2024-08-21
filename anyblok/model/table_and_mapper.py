@@ -24,9 +24,7 @@ def call_define_table_kwargs(cls):
 
 def table_args_and_kwargs(cls):
     try:
-        res = cls.call_define_table_args() + (
-            cls.call_define_table_kwargs(),
-        )
+        res = cls.call_define_table_args() + (cls.call_define_table_kwargs(),)
     except NoInspectionAvailable:  # pragma: no cover
         raise ModelException(
             "A Index  or constraint on the model "
@@ -55,7 +53,6 @@ def mapper_args(cls):
 
 
 class TableMapperPlugin(ModelPluginBase):
-
     def initialisation_tranformation_properties(
         self, properties, transformation_properties
     ):
@@ -65,9 +62,11 @@ class TableMapperPlugin(ModelPluginBase):
         """
         properties["add_in_table_args"] = []
         properties["call_define_table_args"] = classmethod(
-            call_define_table_args)
+            call_define_table_args
+        )
         properties["call_define_table_kwargs"] = classmethod(
-            call_define_table_kwargs)
+            call_define_table_kwargs
+        )
 
         if "table_args" not in transformation_properties:
             transformation_properties["table_args"] = False
@@ -99,16 +98,16 @@ class TableMapperPlugin(ModelPluginBase):
     ):
         table_args = tuple(properties["add_in_table_args"])
         if table_args:
-            properties['call_define_table_args'] = self.define_table_args(
+            properties["call_define_table_args"] = self.define_table_args(
                 namespace, table_args
             )
             transformation_properties["table_args"] = True
 
         if transformation_properties["table_kwargs"] is True:
             if sgdb_in(self.registry.engine, ["MySQL", "MariaDB"]):
-                properties['call_define_table_kwargs'] = (
-                    self.define_table_kwargs(namespace)
-                )
+                properties[
+                    "call_define_table_kwargs"
+                ] = self.define_table_kwargs(namespace)
 
         self.insert_table_args(properties, transformation_properties)
         self.insert_mapper_args(properties, transformation_properties)
@@ -166,14 +165,12 @@ class TableMapperPlugin(ModelPluginBase):
             transformation_properties["table_args"]
             and transformation_properties["table_kwargs"]
         ):
-            properties['__table_args__'] = declared_attr(table_args_and_kwargs)
+            properties["__table_args__"] = declared_attr(table_args_and_kwargs)
         elif transformation_properties["table_args"]:
-            properties['__table_args__'] = declared_attr(table_args)
+            properties["__table_args__"] = declared_attr(table_args)
         elif transformation_properties["table_kwargs"]:  # pragma: no cover
-            properties['__table_args__'] = declared_attr(table_kwargs)
+            properties["__table_args__"] = declared_attr(table_kwargs)
 
-    def insert_mapper_args(
-        self, properties, transformation_properties
-    ):
+    def insert_mapper_args(self, properties, transformation_properties):
         if transformation_properties["mapper_args"]:
-            properties['__mapper_args__'] = declared_attr(mapper_args)
+            properties["__mapper_args__"] = declared_attr(mapper_args)

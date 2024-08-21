@@ -21,17 +21,16 @@ class CachePlugin(ModelPluginBase):
         self, properties, transformation_properties
     ):
         if "caches" not in transformation_properties:
-            transformation_properties.update({'caches': {}})
+            transformation_properties.update({"caches": {}})
 
     def transform_base(self, namespace, base, transformation_properties):
         if hasattr(base, "__declared_caches__"):
-            transformation_properties['caches'].update(
-                base.__declared_caches__)
+            transformation_properties["caches"].update(base.__declared_caches__)
 
     def before_model_construction(
         self, namespace, first_step, properties, transformation_properties
     ):
-        for name, cache in transformation_properties['caches'].items():
+        for name, cache in transformation_properties["caches"].items():
             properties[name] = self.add_cache_method(namespace, name, cache)
 
     def add_cache_method(self, namespace, name, cache):

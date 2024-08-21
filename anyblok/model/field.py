@@ -10,16 +10,17 @@ from .plugins import ModelPluginBase
 
 
 class FieldPlugin(ModelPluginBase):
-
     def initialize_properties(self, properties):
-        properties.update({
-            'fields': {},
-            'columns': {},
-            'relationships': {},
-        })
+        properties.update(
+            {
+                "fields": {},
+                "columns": {},
+                "relationships": {},
+            }
+        )
 
     def merge_properties(self, properties, base_properties):
-        for key in ('fields', 'columns', 'relationships'):
+        for key in ("fields", "columns", "relationships"):
             declared_key = f"__declared_{key}__"
             if key in base_properties:
                 properties[key].update(base_properties[key])
@@ -30,11 +31,13 @@ class FieldPlugin(ModelPluginBase):
         self, properties, transformation_properties
     ):
         if "__declared_fields__" not in transformation_properties:
-            transformation_properties.update({
-                "__declared_fields__": {},
-                "__declared_columns__": {},
-                "__declared_relationships__": {},
-            })
+            transformation_properties.update(
+                {
+                    "__declared_fields__": {},
+                    "__declared_columns__": {},
+                    "__declared_relationships__": {},
+                }
+            )
 
     def transform_base(self, namespace, base, transformation_properties):
         for key in (

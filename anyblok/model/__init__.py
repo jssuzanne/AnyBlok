@@ -20,7 +20,7 @@ from anyblok import Declarations
 from anyblok.common import (
     BaseModelFirstStepList,
     BaseModelSecondStepList,
-    anyblok_column_prefix
+    anyblok_column_prefix,
 )
 from anyblok.mapper import ModelAttribute, format_schema
 from anyblok.registry import RegistryManager
@@ -67,9 +67,7 @@ def update_factory(kwargs):
 
 def check_model_base(cls, registryname):
     if has_sqlalchemy_fields(cls):
-        raise ModelException(
-            "the base %r have an SQLAlchemy attribute" % cls
-        )
+        raise ModelException("the base %r have an SQLAlchemy attribute" % cls)
 
     if hasattr(cls, "__table_args__"):
         raise ModelException(
@@ -316,10 +314,12 @@ class Model:
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
 
-        properties.update({
-            "__db_schema__": db_schema,
-            "__bases__": bases,
-        })
+        properties.update(
+            {
+                "__db_schema__": db_schema,
+                "__bases__": bases,
+            }
+        )
         if "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
 
@@ -338,10 +338,10 @@ class Model:
         transformation_properties,
     ):
         kwargs = {"namespace": realregistryname} if realregistryname else {}
-        for base in first_step['__bases__'][::-1]:
+        for base in first_step["__bases__"][::-1]:
             if isinstance(base, str):
                 tp = transformation_properties
-                if base in registry.loaded_registries['Mixin_names']:
+                if base in registry.loaded_registries["Mixin_names"]:
                     bs, _ = cls.load_namespace_second_step(
                         registry,
                         base,
@@ -451,7 +451,8 @@ class Model:
 
         ns = registry.loaded_registries[namespace]
         bases = BaseModelSecondStepList(
-            Model, registry, namespace, transformation_properties)
+            Model, registry, namespace, transformation_properties
+        )
         properties = ns["properties"].copy()
         first_step = registry.loaded_namespaces_first_step[namespace]
         properties["__db_schema__"] = first_step.get("__db_schema__", None)
@@ -467,8 +468,14 @@ class Model:
         )(registry)
 
         cls.apply_inheritance_base(
-            registry, namespace, first_step, bases, realregistryname,
-            properties, transformation_properties)
+            registry,
+            namespace,
+            first_step,
+            bases,
+            realregistryname,
+            properties,
+            transformation_properties,
+        )
         if namespace in registry.loaded_registries["Model_names"]:
             tablename = properties["__tablename__"]
             modelname = namespace.replace(".", "")
