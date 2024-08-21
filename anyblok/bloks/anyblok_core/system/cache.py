@@ -43,10 +43,9 @@ class Cache:
     def invalidate_all(cls):
         res = []
         for registry_name, methods in cls.anyblok.caches.items():
-            for method, caches in methods.items():
+            for method, cache in methods.items():
                 res.append(dict(registry_name=registry_name, method=method))
-                for cache in caches:
-                    cache.cache_clear()
+                cache.cache_clear()
 
         if res:
             instances = cls.multi_insert(*res)
@@ -70,8 +69,7 @@ class Cache:
                 cls.last_cache_id = cls.insert(
                     registry_name=registry_name, method=method
                 ).id
-                for cache in caches[registry_name][method]:
-                    cache.cache_clear()
+                caches[registry_name][method].cache_clear()
             else:
                 raise CacheException(  # pragma: no cover
                     "Unknown cached method %r" % method
@@ -93,7 +91,7 @@ class Cache:
         query_res = cls.execute_sql_statement(query)
         caches = cls.anyblok.caches
         for id_, registry_name, method in query_res:
-            res.extend(caches[registry_name][method])
+            res.append(caches[registry_name][method])
             cls.last_cache_id = max(cls.last_cache_id, id_)
 
         return res

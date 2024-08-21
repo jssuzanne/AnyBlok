@@ -35,14 +35,13 @@ class CachePlugin(ModelPluginBase):
 
     def add_cache_method(self, namespace, name, cache):
         cache_ = self.registry.caches.setdefault(namespace, {})
-        entry = cache_.setdefault(name, [])
 
         @lru_cache(maxsize=cache.size)
         def __func__(cls_or_self, *a, **kw):
             Model = self.registry.get(namespace)
             return getattr(super(Model, cls_or_self), name)(*a, **kw)
 
-        entry.append(__func__)
+        cache_[name] = __func__
 
         if cache.is_clasmethod:
             return classmethod(__func__)
