@@ -22,6 +22,23 @@ class Field:
     """
 
     use_hybrid_property = False
+    _standard_args = {"ignore_migration", "context", "label"}
+
+    @property
+    def label(self):
+        return self.info.get("label")
+
+    @label.setter
+    def label(self, value):
+        self.info["label"] = value
+
+    @property
+    def help(self):
+        return self.info.get("help")
+
+    @help.setter
+    def help(self, value):
+        self.info["help"] = value
 
     def __init__(self, *args, **kwargs):
         """Initialize the field
@@ -30,14 +47,19 @@ class Field:
         :type label: str
         """
         self.forbid_instance(Field)
-        self.label = None
+        self.info = {}
         self.ignore_migration = kwargs.pop("ignore_migration", False)
-
-        if "label" in kwargs:
-            self.label = kwargs.pop("label")
-
         self.context = kwargs.pop("context", {})
+
+        label = kwargs.pop("label", None)
+        if label:
+            self.info["label"] = label
+
         self.args = args
+        for k in list(kwargs.keys()):
+            if k not in self._standard_args:
+                self.info[k] = kwargs.pop(k)
+
         self.kwargs = kwargs
 
     def __set_name__(self, owner, name):
@@ -190,7 +212,7 @@ class Field:
             and returned
         :rtype: the label for this field
         """
-        if not self.label:
+        if not self.info.get("label"):
             label = fieldname.replace("_", " ")
             self.label = label.capitalize()
 
@@ -216,6 +238,7 @@ class Field:
         res["Context"] = self.context
         res["Label"] = self.label
         res.update(self.kwargs)
+        res.update(self.info)
         return res
 
     autodoc_omit_property_values = set(
@@ -302,6 +325,14 @@ class Function(Field):
 
     """
 
+    _standard_args = Field._standard_args | {
+        "fget",
+        "fset",
+        "fdel",
+        "fexpr",
+        "fuexpr",
+    }
+
     def get_sqlalchemy_mapping(
         self, registry, namespace, fieldname, properties
     ):
@@ -374,6 +405,13 @@ class JsonRelated(Field):
             x = JsonRelated(json_column='properties', keys=['x'])
 
     """
+
+    _standard_args = Field._standard_args | {
+        "json_column",
+        "keys",
+        "get_adapter",
+        "set_adapter",
+    }
 
     def __init__(self, *args, **kwargs):
         self.json_column = kwargs.pop("json_column", None)

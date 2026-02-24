@@ -197,6 +197,31 @@ class SqlMixin:
         return alias
 
     @classmethod
+    def __registry_get_structure__(cls):
+        """Surcharge to add columns and relationships"""
+        if cls.__dict__.get("_anyblok_cached_structure") is not None:
+            return cls._anyblok_cached_structure
+
+        res = super().__registry_get_structure__()
+        res["tablename"] = cls.__tablename__
+        res["schema"] = getattr(cls, "__db_schema__", None)
+        res["fields"] = {
+            name: field.info.copy()
+            for name, field in getattr(cls, "__declared_fields__", {}).items()
+        }
+        res["columns"] = {
+            name: column.info.copy()
+            for name, column in getattr(cls, "__declared_columns__", {}).items()
+        }
+        res["relationships"] = {
+            name: rel.info.copy()
+            for name, rel in getattr(
+                cls, "__declared_relationships__", {}
+            ).items()
+        }
+        return res
+
+    @classmethod
     def get_where_clause_from_primary_keys(cls, **pks):
         """return the where clause to find object from pks
 

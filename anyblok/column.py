@@ -168,6 +168,28 @@ class Column(Field):
     foreign_key = None
     sqlalchemy_type = None
     type = None
+    _standard_args = Field._standard_args | {
+        "foreign_key",
+        "sequence",
+        "db_column_name",
+        "default",
+        "encrypt_key",
+        "type_",
+        "autoincrement",
+        "doc",
+        "key",
+        "index",
+        "info",
+        "nullable",
+        "onupdate",
+        "primary_key",
+        "server_default",
+        "server_onupdate",
+        "quote",
+        "unique",
+        "system",
+        "comment",
+    }
 
     def __init__(self, *args, **kwargs):
         """Initialize the column
@@ -275,11 +297,16 @@ class Column(Field):
         kwargs = self.kwargs.copy()
         if "info" not in kwargs:
             kwargs["info"] = {}
+
+        self.info["rtype"] = self.__class__.__name__
+
+        # Merge self.info into SQLAlchemy info
+        kwargs["info"].update(self.info)
+
         args = self.format_foreign_key(
             registry, namespace, fieldname, args, kwargs
         )
 
-        kwargs["info"]["label"] = self.label
         if self.sequence:
             args = (self.sequence,) + args
 
@@ -602,6 +629,8 @@ class DateTime(Column):
 
     """
 
+    _standard_args = Column._standard_args | {"auto_update", "default_timezone"}
+
     def __init__(self, *args, **kwargs):
         self.auto_update = kwargs.pop("auto_update", False)
         default_timezone = kwargs.pop(
@@ -771,6 +800,8 @@ class String(Column):
 
     """
 
+    _standard_args = Column._standard_args | {"size"}
+
     def __init__(self, *args, **kwargs):
         self.size = kwargs.pop("size", 64)
         kwargs.pop("type_", None)
@@ -817,6 +848,8 @@ class Enum(Column):
 
     enum_cls should be an enum class
     """
+
+    _standard_args = Column._standard_args | {"enum_cls"}
 
     def __init__(self, *args, **kwargs):
         self.enum_cls = kwargs.pop("enum_cls")
@@ -874,6 +907,8 @@ class Password(Column):
             Test.query().filter(Test.x == 'mypassword').count()
             ==> 0
     """
+
+    _standard_args = Column._standard_args | {"size", "crypt_context"}
 
     def __init__(self, *args, **kwargs):
         self.size = kwargs.pop("size", 64)
@@ -1068,6 +1103,8 @@ class Selection(Column):
             x = Selection(selections=STATUS, size=64, default=u'draft')
 
     """
+
+    _standard_args = Column._standard_args | {"selections", "size"}
 
     def __init__(self, *args, **kwargs):
         self.selections = tuple()
@@ -1364,6 +1401,13 @@ class Sequence(String):
         "SO-000001"
     """
 
+    _standard_args = String._standard_args | {
+        "code",
+        "start",
+        "formater",
+        "no_gap",
+    }
+
     def __init__(self, *args, **kwargs):
         if "foreign_key" in kwargs:
             raise FieldException(
@@ -1441,6 +1485,8 @@ class Color(Column):
 
     """
 
+    _standard_args = Column._standard_args | {"size"}
+
     def __init__(self, *args, **kwargs):
         self.max_length = max_length = kwargs.pop("size", 20)
         kwargs.pop("type_", None)
@@ -1489,6 +1535,8 @@ class UUID(Column):
             x = UUID()
 
     """
+
+    _standard_args = Column._standard_args | {"binary", "native"}
 
     def __init__(self, *args, **kwargs):
         uuid_kwargs = {}
@@ -1567,6 +1615,8 @@ class PhoneNumber(Column):
     .. note:: ``phonenumbers`` >= **8.9.5** distribution is required
 
     """
+
+    _standard_args = Column._standard_args | {"region", "max_length"}
 
     def __init__(self, region="FR", max_length=20, *args, **kwargs):
         self.region = region

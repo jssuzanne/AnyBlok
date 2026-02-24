@@ -197,19 +197,38 @@ class RelationShipList:  # don't inherit list
 
 
 class RelationShip(Field):
-    """RelationShip class
+    """RelationShip class..."""
 
-    The RelationShip class is used to define the type of SQL field Declarations
-
-    Add a new relation ship type::
-
-        @Declarations.register(Declarations.RelationShip)
-        class Many2one:
-            pass
-
-    the relationship column are forbidden because the model can be used on
-    the model
-    """
+    _standard_args = Field._standard_args | {
+        "model",
+        "backref",
+        "back_populates",
+        "primaryjoin",
+        "secondaryjoin",
+        "secondary",
+        "viewonly",
+        "post_update",
+        "passive_updates",
+        "sync_backref",
+        "foreign_keys",
+        "remote_side",
+        "order_by",
+        "collection_class",
+        "proxy",
+        "lazy",
+        "innerjoin",
+        "join_depth",
+        "uselist",
+        "cascade",
+        "passive_deletes",
+        "single_parent",
+        "extension",
+        "comparator_factory",
+        "query_class",
+        "info",
+        "doc",
+        "overlaps",
+    }
 
     def __init__(self, *args, **kwargs):
         self.forbid_instance(RelationShip)
@@ -220,10 +239,7 @@ class RelationShip(Field):
 
         super(RelationShip, self).__init__(*args, **kwargs)
 
-        if "info" not in self.kwargs:
-            self.kwargs["info"] = {}
-
-        self.kwargs["info"]["remote_model"] = self.model.model_name
+        self.info["remote_model"] = self.model.model_name
         self.backref_properties = {}
 
     def __set_name__(self, owner, name):
@@ -327,8 +343,14 @@ class RelationShip(Field):
         """
         self.model.check_model(registry)
         self.format_label(fieldname)
-        self.kwargs["info"]["label"] = self.label
-        self.kwargs["info"]["rtype"] = self.__class__.__name__
+        self.info["label"] = self.label
+        self.info["rtype"] = self.__class__.__name__
+
+        if "info" not in self.kwargs:
+            self.kwargs["info"] = {}
+
+        self.kwargs["info"].update(self.info)
+
         self.apply_instrumentedlist(registry, namespace, fieldname)
         self.format_backref(registry, namespace, fieldname, properties)
         return self.get_relationship_cls()(
@@ -402,6 +424,16 @@ class Many2One(RelationShip):
     """
 
     use_hybrid_property = True
+    _standard_args = RelationShip._standard_args | {
+        "remote_columns",
+        "column_names",
+        "nullable",
+        "unique",
+        "index",
+        "primary_key",
+        "one2many",
+        "foreign_key_options",
+    }
 
     def __init__(self, **kwargs):
         super(Many2One, self).__init__(**kwargs)
@@ -413,26 +445,26 @@ class Many2One(RelationShip):
                 self._remote_columns = [self._remote_columns]
 
         self.primary_key = self.kwargs.pop("primary_key", False)
-        self.kwargs["info"]["primary_key"] = self.primary_key
+        self.info["primary_key"] = self.primary_key
 
         self.nullable = False if self.primary_key else True
         nullable = self.kwargs.pop("nullable", True)
         if not self.primary_key:
             self.nullable = nullable
 
-        self.kwargs["info"]["nullable"] = self.nullable
+        self.info["nullable"] = self.nullable
 
         self.unique = self.kwargs.pop("unique", False)
-        self.kwargs["info"]["unique"] = self.unique
+        self.info["unique"] = self.unique
 
         self.index = self.kwargs.pop("index", False)
-        self.kwargs["info"]["index"] = self.index
+        self.info["index"] = self.index
 
         if "one2many" in kwargs:
             self.kwargs["backref"] = backref = self.kwargs.pop("one2many")
-            self.kwargs["info"]["remote_name"] = backref
+            self.info["remote_name"] = backref
             if isinstance(backref, (list, tuple)):
-                self.kwargs["info"]["remote_name"] = backref[0]
+                self.info["remote_name"] = backref[0]
                 self.backref_properties.update(**backref[1])
 
         self._column_names = None
@@ -493,7 +525,7 @@ class Many2One(RelationShip):
         self, registry, namespace, fieldname
     ):
         self.remote_columns = self.get_remote_columns(registry)
-        self.kwargs["info"]["remote_columns"] = [
+        self.info["remote_columns"] = [
             x.attribute_name for x in self.remote_columns
         ]
         self.column_names = self.get_columns_names(
@@ -513,7 +545,7 @@ class Many2One(RelationShip):
         )
         # force the info value in hybrid_property because since SQLAlchemy
         # 1.1.* the info is not propagate
-        res.info = self.kwargs["info"]
+        res.info = self.info
         return res
 
     def add_expire_attributes(self, registry, namespace, fieldname, cname):
@@ -550,7 +582,7 @@ class Many2One(RelationShip):
                 "column_names" % fieldname
             )
 
-        self.kwargs["info"]["local_columns"] = [
+        self.info["local_columns"] = [
             x.attribute_name for x in self.column_names
         ]
         remote_types = {
@@ -815,7 +847,7 @@ class One2One(Many2One):
         if "one2many" in kwargs:
             raise FieldException("Unknow argmument 'one2many'")
 
-        self.kwargs["info"]["remote_name"] = self.kwargs["backref"]
+        self.info["remote_name"] = self.kwargs["backref"]
 
     def define_backref_properties(self, registry, namespace, properties):
         """Add option uselist = False
@@ -839,45 +871,19 @@ class One2One(Many2One):
 
 
 class Many2Many(RelationShip):
-    """Define a relationship attribute on the model
+    """Define a relationship attribute on the model..."""
 
-    ::
-
-        @register(Model)
-        class TheModel:
-
-            relationship = Many2Many(label="The relationship",
-                                     model=Model.RemoteModel,
-                                     join_table="many2many table",
-                                     remote_columns="The remote column",
-                                     m2m_remote_columns="Name in many2many"
-                                     local_columns="local primary key"
-                                     m2m_local_columns="Name in many2many"
-                                     many2many="themodels")
-
-    if the join_table is not defined, then the table join is
-        "join_'local table'_and_'remote table'"
-
-    .. warning::
-
-        The join_table must be filled when the declaration of the
-        Many2Many is done in a Mixin
-
-    If the remote_columns are not define then, the system take the primary key
-    of the remote model
-
-    if the local_columns are not define the take the primary key of the local
-        model
-
-    :param model: the remote model
-    :param join_table: the many2many table to join local and remote models
-    :param join_model: rich many2many where the join table come from a Model
-    :param remote_columns: the column name on the remote model
-    :param m2m_remote_columns: the column name to remote model in m2m table
-    :param local_columns: the column on the model
-    :param m2m_local_columns: the column name to local model in m2m table
-    :param many2many: create the opposite many2many on the remote model
-    """
+    _standard_args = RelationShip._standard_args | {
+        "join_table",
+        "join_model",
+        "remote_columns",
+        "m2m_remote_columns",
+        "local_columns",
+        "m2m_local_columns",
+        "many2many",
+        "compute_join",
+        "schema",
+    }
 
     def __init__(self, **kwargs):
         super(Many2Many, self).__init__(**kwargs)
@@ -913,9 +919,9 @@ class Many2Many(RelationShip):
 
         self.compute_join = self.kwargs.pop("compute_join", False)
         self.kwargs["backref"] = backref = self.kwargs.pop("many2many", None)
-        self.kwargs["info"]["remote_name"] = backref
+        self.info["remote_name"] = backref
         if isinstance(backref, (list, tuple)):
-            self.kwargs["info"]["remote_name"] = backref[0]
+            self.info["remote_name"] = backref[0]
             self.backref_properties.update(**backref[1])
 
         self.schema = self.kwargs.pop("schema", None)
@@ -1016,10 +1022,10 @@ class Many2Many(RelationShip):
                 for x in self.remote_columns
             ]
 
-        self.kwargs["info"]["local_columns"] = [
+        self.info["local_columns"] = [
             x.attribute_name for x in local_columns
         ]
-        self.kwargs["info"]["remote_columns"] = [
+        self.info["remote_columns"] = [
             x.attribute_name for x in remote_columns
         ]
 
@@ -1277,29 +1283,13 @@ class InstrumentedAttribute_O2M(attributes.InstrumentedAttribute):
 
 
 class One2Many(RelationShip):
-    """Define a relationship attribute on the model
-
-    ::
-
-        @register(Model)
-        class TheModel:
-
-            relationship = One2Many(label="The relationship",
-                                    model=Model.RemoteModel,
-                                    remote_columns="The remote column",
-                                    primaryjoin="Join condition"
-                                    many2one="themodel")
-
-    If the primaryjoin is not filled then the join condition is
-        "'local table'.'local promary key' == 'remote table'.'remote colum'"
-
-    :param model: the remote model
-    :param remote_columns: the column name on the remote model
-    :param primaryjoin: the join condition between the remote column
-    :param many2one: create the many2one link with this one2many
-    """
+    """Define a relationship attribute on the model..."""
 
     InstrumentedAttribute = InstrumentedAttribute_O2M
+    _standard_args = RelationShip._standard_args | {
+        "remote_columns",
+        "many2one",
+    }
 
     def __init__(self, **kwargs):
         super(One2Many, self).__init__(**kwargs)
@@ -1316,7 +1306,7 @@ class One2Many(RelationShip):
 
         if "many2one" in kwargs:
             self.kwargs["backref"] = self.kwargs.pop("many2one")
-            self.kwargs["info"]["remote_name"] = self.kwargs["backref"]
+            self.info["remote_name"] = self.kwargs["backref"]
 
     def autodoc_get_properties(self):
         res = super(One2Many, self).autodoc_get_properties()
@@ -1341,7 +1331,7 @@ class One2Many(RelationShip):
                 )
 
     def format_join_from_remote_columns(self, registry, namespace, fieldname):
-        self.kwargs["info"]["remote_columns"] = [
+        self.info["remote_columns"] = [
             x.attribute_name for x in self.remote_columns
         ]
         self.link_between_columns = [
@@ -1383,14 +1373,14 @@ class One2Many(RelationShip):
         model = namespace.replace(".", "")
         pjs_ = {}
         self.link_between_columns = []
-        self.kwargs["info"]["remote_columns"] = []
-        self.kwargs["info"]["local_columns"] = []
+        self.info["remote_columns"] = []
+        self.info["local_columns"] = []
         for m2o_name, many2one in many2ones:
             remote_columns = many2one.get_remote_columns(registry)
             for x in remote_columns:
                 cname = m2o_name + "_" + x.attribute_name
                 self.link_between_columns.append((cname, x.attribute_name))
-                self.kwargs["info"]["remote_columns"].append(cname)
+                self.info["remote_columns"].append(cname)
                 complete_name = cmodel + "." + cname
                 remote_name = model + "." + x.attribute_name
                 if remote_name in pjs_:
@@ -1459,13 +1449,13 @@ class One2Many(RelationShip):
         else:
             self.format_join_and_remote_columns(registry, namespace, fieldname)
 
-        self.kwargs["info"]["local_columns"] = []
-        for rcol in self.kwargs["info"]["remote_columns"]:
+        self.info["local_columns"] = []
+        for rcol in self.info["remote_columns"]:
             col = ModelAttribute(self.model.model_name, rcol).get_fk_column(
                 registry
             )
             if col:
-                self.kwargs["info"]["local_columns"].append(col)
+                self.info["local_columns"].append(col)
 
         if not self.kwargs.get("backref"):
             m2o = self.get_back_populate_relationship(registry, namespace)

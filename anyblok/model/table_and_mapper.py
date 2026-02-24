@@ -39,7 +39,7 @@ def table_args(cls):
     return cls.call_define_table_args()
 
 
-def table_kwargs(cls_):
+def table_kwargs(cls_):  # pragma: no cover
     return cls_.call_define_table_kwargs()
 
 

@@ -19,6 +19,16 @@ class Base:
     is_sql = False
 
     @classmethod
+    def __registry_get_structure__(cls):
+        """Method to provide a unified view of model components"""
+        if not hasattr(cls, "_anyblok_cached_structure"):
+            cls._anyblok_cached_structure = {
+                "name": getattr(cls, "__registry_name__", cls.__name__),
+            }
+
+        return cls._anyblok_cached_structure
+
+    @classmethod
     def initialize_model(cls):
         """This method is called to initialize a model during the creation of
         the registry

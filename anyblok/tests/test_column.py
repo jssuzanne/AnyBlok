@@ -540,7 +540,7 @@ class TestColumns:
             crypt_context={"schemes": ["bcrypt"]},
         )
         bcrypt_password_hash = (
-            "$2y$10$Crnf9zkl67BugBmA4ASoU.phSGda4ir4JzaU64jpg2h.s92dSsaUu"
+            "$2y$10$Crnf9zkl67BugBmA4ASoUs92dSsaUu"
         )
         test = registry.Test.insert(col=bcrypt_password_hash)
         assert test.col == "password"
