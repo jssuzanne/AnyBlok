@@ -218,6 +218,9 @@ class Column(Field):
         if "default" in kwargs:
             self.default_val = kwargs.pop("default")
 
+        if kwargs.get("primary_key", False) is True:
+            kwargs["nullable"] = False
+
         self.encrypt_key = kwargs.pop("encrypt_key", None)
         super(Column, self).__init__(*args, **kwargs)
 
@@ -298,7 +301,7 @@ class Column(Field):
         if "info" not in kwargs:
             kwargs["info"] = {}
 
-        self.info["rtype"] = self.__class__.__name__
+        self.info["type"] = self.__class__.__name__
 
         # Merge self.info into SQLAlchemy info
         kwargs["info"].update(self.info)
@@ -1180,11 +1183,17 @@ class Selection(Column):
         :param res:
         """
         super(Selection, self).update_description(registry, model, res)
-        sqlalchemy_type = SelectionType(
-            self.selections, self.size, registry=registry, namespace=model
-        )
-        values = sqlalchemy_type._StrSelection().get_selections()
-        res["selections"] = [(k, v) for k, v in values.items()]
+        if isinstance(self.selections, str):
+            res["selections"] = self.selections
+            m = registry.get(model)
+            method = getattr(m, self.selections, None)
+            res["selections_doc"] = method.__doc__ if method else None
+        else:
+            sqlalchemy_type = SelectionType(
+                self.selections, self.size, registry=registry, namespace=model
+            )
+            values = sqlalchemy_type._StrSelection().get_selections()
+            res["selections"] = [(k, v) for k, v in values.items()]
 
     def must_be_copied_before_declaration(self):
         """Return True if selections is an instance of str.
@@ -2053,11 +2062,17 @@ class ModelSelection(Column):
         :param res:
         """
         super(ModelSelection, self).update_description(registry, model, res)
-        sqlalchemy_type = ModelSelectionType(
-            self.validator, registry=registry, namespace=model
-        )
-        values = sqlalchemy_type._StrModelSelection().get_selections()
-        res["selections"] = [(k, v) for k, v in values.items()]
+        res["selections"] = "Lazy"
+        if isinstance(self.validator, str):
+            res["validator"] = self.validator
+            m = registry.get(model)
+            method = getattr(m, self.validator, None)
+            res["validator_doc"] = method.__doc__ if method else None
+        elif callable(self.validator):
+            res["validator"] = self.validator.__name__
+            res["validator_doc"] = self.validator.__doc__
+        else:
+            res["validator"] = str(self.validator)
 
 
 def fieldToModelAttribute(field):
@@ -2362,14 +2377,28 @@ class ModelFieldSelection(Column):
         super(ModelFieldSelection, self).update_description(
             registry, model, res
         )
-        sqlalchemy_type = ModelFieldSelectionType(
-            self.model_validator,
-            self.field_validator,
-            registry=registry,
-            namespace=model,
-        )
-        values = sqlalchemy_type._StrModelFieldSelection().get_selections()
-        res["selections"] = [(k, v) for k, v in values.items()]
+        res["selections"] = "Lazy"
+        if isinstance(self.model_validator, str):
+            res["model_validator"] = self.model_validator
+            m = registry.get(model)
+            method = getattr(m, self.model_validator, None)
+            res["model_validator_doc"] = method.__doc__ if method else None
+        elif callable(self.model_validator):
+            res["model_validator"] = self.model_validator.__name__
+            res["model_validator_doc"] = self.model_validator.__doc__
+        else:
+            res["model_validator"] = str(self.model_validator)
+
+        if isinstance(self.field_validator, str):
+            res["field_validator"] = self.field_validator
+            m = registry.get(model)
+            method = getattr(m, self.field_validator, None)
+            res["field_validator_doc"] = method.__doc__ if method else None
+        elif callable(self.field_validator):
+            res["field_validator"] = self.field_validator.__name__
+            res["field_validator_doc"] = self.field_validator.__doc__
+        else:
+            res["field_validator"] = str(self.field_validator)
 
 
 def instanceToDict(instance):

@@ -537,12 +537,10 @@ class TestColumns:
         registry = self.init_registry(
             simple_column,
             ColumnType=Password,
-            crypt_context={"schemes": ["bcrypt"]},
+            crypt_context={"schemes": ["md5_crypt"]},
         )
-        bcrypt_password_hash = (
-            "$2y$10$Crnf9zkl67BugBmA4ASoUs92dSsaUu"
-        )
-        test = registry.Test.insert(col=bcrypt_password_hash)
+        password_hash = b"$1$/YIBNW8e$Ikv/u7UbPsc64ZwnxjS0t0"
+        test = registry.Test.insert(col=password_hash)
         assert test.col == "password"
 
     @pytest.mark.skipif(not has_passlib, reason="passlib is not installed")
@@ -1620,10 +1618,10 @@ class TestColumnModelSelection:
             "model": None,
             "nullable": True,
             "primary_key": False,
-            "selections": [
-                ("Model.System.Blok", "Model.System.Blok"),
-            ],
+            "selections": "Lazy",
             "type": "ModelSelection",
+            "validator": "my_validator",
+            "validator_doc": None,
         }
 
     def test_description2(self, registry_modelselection):
@@ -1631,8 +1629,7 @@ class TestColumnModelSelection:
             ["col", "col2"]
         )
         assert (
-            description["col"]["selections"]
-            != description["col2"]["selections"]
+            description["col"]["validator"] != description["col2"]["validator"]
         )
 
     def test_setter_model_validator_all(self, registry_modelselection):
@@ -1795,14 +1792,16 @@ class TestColumnModelFieldSelection:
             "col"
         )["col"]
         assert description == {
+            "field_validator": "my_field_validator",
+            "field_validator_doc": None,
             "id": "col",
             "label": "Col",
             "model": None,
+            "model_validator": "my_model_validator",
+            "model_validator_doc": None,
             "nullable": True,
             "primary_key": False,
-            "selections": [
-                ("Model.System.Blok => name", "Model.System.Blok : name"),
-            ],
+            "selections": "Lazy",
             "type": "ModelFieldSelection",
         }
 
@@ -1811,8 +1810,8 @@ class TestColumnModelFieldSelection:
             ["col", "col2"]
         )
         assert (
-            description["col"]["selections"]
-            != description["col2"]["selections"]
+            description["col"]["model_validator"]
+            != description["col2"]["model_validator"]
         )
 
     def test_setter_field_validator_all(self, registry_modelfieldselection):

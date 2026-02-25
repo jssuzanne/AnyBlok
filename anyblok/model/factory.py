@@ -105,9 +105,14 @@ class ViewFactory(BaseFactory):
             if isinstance(selectable, Query):
                 selectable = selectable.subquery()  # pragma: no cover
 
+            pks_ = set()
+            fks_ = set()
             for c in selectable.subquery().columns:
-                col = c._make_proxy(view)[1]
+                col = c._make_proxy(view, pks_, fks_)[1]
                 view._columns.replace(col)
+
+            view.primary_key.update(pks_)
+            view.foreign_keys.update(fks_)
 
             metadata = self.registry.declarativebase.metadata
             event.listen(

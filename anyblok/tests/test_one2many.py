@@ -243,6 +243,7 @@ class TestCompleteOne2Many:
                 "nullable": True,
                 "primary_key": False,
                 "remote_columns": ["address_id"],
+                "remote_model": "Model.Person",
                 "remote_name": "address",
                 "type": "One2Many",
             },

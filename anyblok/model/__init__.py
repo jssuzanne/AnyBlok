@@ -454,6 +454,7 @@ class Model:
             Model, registry, namespace, transformation_properties
         )
         properties = ns["properties"].copy()
+
         first_step = registry.loaded_namespaces_first_step[namespace]
         properties["__db_schema__"] = first_step.get("__db_schema__", None)
 

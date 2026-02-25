@@ -34,6 +34,14 @@ class uniquedict(dict):
                 self[key].append(attr)
 
 
+def format_cols(cols):
+    if not isinstance(cols, (list, tuple)):
+        return cols
+    return [
+        x.attribute_name if hasattr(x, "attribute_name") else x for x in cols
+    ]
+
+
 class SqlMixin:
     __db_schema__ = None
 
@@ -84,13 +92,12 @@ class SqlMixin:
     @classmethod
     def initialize_model(cls):
         super().initialize_model()
-        cls.SQLAMapper = inspect(cls)
 
     @classmethod
     def clear_all_model_caches(cls):
         super().clear_all_model_caches()
         Cache = cls.anyblok.System.Cache
-        Cache.invalidate(cls, "_fields_description")
+        Cache.invalidate(cls, "__registry_get_structure__")
         Cache.invalidate(cls, "fields_name")
         Cache.invalidate(cls, "getFieldType")
         Cache.invalidate(cls, "get_primary_keys")
@@ -196,30 +203,195 @@ class SqlMixin:
         alias.anyblok = cls.anyblok
         return alias
 
-    @classmethod
+    @ClassMethodCache()
     def __registry_get_structure__(cls):
-        """Surcharge to add columns and relationships"""
-        if cls.__dict__.get("_anyblok_cached_structure") is not None:
-            return cls._anyblok_cached_structure
+        """Universal source of truth for model structure.
+        Declaration-driven and optimized via injection-at-construction.
+        """
+        cls._anyblok_introspection_lock = True
+        try:
+            res = {
+                "columns": {},
+                "relationships": {},
+                "fields": {},
+                "tablename": cls.__tablename__,
+                "schema": getattr(cls, "__db_schema__", None),
+            }
+            res.update(super().__registry_get_structure__())
 
-        res = super().__registry_get_structure__()
-        res["tablename"] = cls.__tablename__
-        res["schema"] = getattr(cls, "__db_schema__", None)
-        res["fields"] = {
-            name: field.info.copy()
-            for name, field in getattr(cls, "__declared_fields__", {}).items()
-        }
-        res["columns"] = {
-            name: column.info.copy()
-            for name, column in getattr(cls, "__declared_columns__", {}).items()
-        }
-        res["relationships"] = {
-            name: rel.info.copy()
+            for base in cls.__anyblok_bases__:
+                BaseModel = cls.anyblok.loaded_namespaces.get(
+                    base.__registry_name__
+                )
+                if BaseModel:
+                    assembled = BaseModel.__registry_get_structure__()
+                    if assembled:
+                        res["fields"].update(assembled.get("fields", {}))
+                        res["columns"].update(assembled.get("columns", {}))
+                        res["relationships"].update(
+                            assembled.get("relationships", {})
+                        )
+
+            def enrich_field(name, field):
+                info = field.info.copy()
+                val = {
+                    "id": name,
+                    "label": info.get("label")
+                    or name.replace("_", " ").capitalize(),
+                    "type": field.__class__.__name__,
+                    "nullable": field.kwargs.get("nullable", True),
+                    "primary_key": field.kwargs.get("primary_key", False),
+                    "model": getattr(field, "foreign_key", None),
+                }
+                if hasattr(val["model"], "model_name"):
+                    val["model"] = val["model"].model_name
+
+                val.update(info)
+                if hasattr(field, "update_description"):
+                    field.update_description(
+                        cls.anyblok, cls.__registry_name__, val
+                    )
+                return val
+
+            def enrich_rel(name, rel):
+                info = rel.info.copy()
+                ftype = rel.__class__.__name__
+
+                local_columns = []
+                remote_columns = []
+                primary_key = False
+                nullable = True
+                model = info.get("remote_model")
+                remote_name = info.get("remote_name")
+
+                if ftype == "FakeRelationShip":
+                    remote_model_name = rel.mapper.model_name
+                    model = remote_model_name
+                    registry = cls.anyblok
+                    remote_rel_name = rel.mapper.attribute_name
+                    remote_rel = (
+                        registry.loaded_namespaces_first_step.get(
+                            remote_model_name, {}
+                        )
+                        .get("relationships", {})
+                        .get(remote_rel_name)
+                    )
+
+                    if remote_rel:
+                        remote_name = remote_rel_name
+                        local_columns = getattr(
+                            remote_rel, "remote_columns", []
+                        )
+                        remote_columns = getattr(
+                            remote_rel, "local_columns", []
+                        )
+                        remote_rtype = remote_rel.__class__.__name__
+                        if remote_rtype == "Many2One":
+                            ftype = "One2Many"
+                        elif remote_rtype == "Many2Many":
+                            ftype = "Many2Many"
+                        elif remote_rtype == "One2One":
+                            ftype = "One2One"
+                else:
+                    local_columns = info.get("local_columns", [])
+                    remote_columns = info.get("remote_columns", [])
+                    nullable = info.get("nullable", True)
+
+                val = {
+                    "id": name,
+                    "label": info.get("label")
+                    or name.replace("_", " ").capitalize(),
+                    "type": ftype,
+                    "nullable": nullable,
+                    "primary_key": primary_key,
+                    "model": model,
+                    "local_columns": format_cols(local_columns),
+                    "remote_columns": format_cols(remote_columns),
+                    "remote_name": remote_name,
+                }
+                val.update(info)
+                if hasattr(rel, "update_description"):
+                    rel.update_description(
+                        cls.anyblok, cls.__registry_name__, val
+                    )
+
+                return val
+
+            # 2. Add local declarations
+            for name, field in getattr(cls, "__declared_fields__", {}).items():
+                res["fields"][name] = enrich_field(name, field)
+
+            for name, col in getattr(cls, "__declared_columns__", {}).items():
+                res["columns"][name] = enrich_field(name, col)
+
             for name, rel in getattr(
                 cls, "__declared_relationships__", {}
-            ).items()
-        }
-        return res
+            ).items():
+                res["relationships"][name] = enrich_rel(name, rel)
+
+            # 3. Add generated_fields from all relationships in the registry
+            for model in cls.anyblok.get_all_models():
+                for rel_name, rel in getattr(
+                    model, "__declared_relationships__", {}
+                ).items():
+                    # Check manually defined backrefs
+                    backref_name = rel.kwargs.get("backref")
+                    if backref_name:
+                        if isinstance(backref_name, (list, tuple)):
+                            backref_name = backref_name[0]
+
+                        target_model = rel.model
+                        if hasattr(target_model, "model_name"):
+                            target_model = target_model.model_name
+
+                        if target_model == cls.__registry_name__:
+                            if backref_name not in res["relationships"]:
+                                ftype = rel.__class__.__name__
+                                if ftype == "Many2One":
+                                    ftype = "One2Many"
+                                elif ftype == "One2Many":
+                                    ftype = "Many2One"
+
+                                # Many2Many remains Many2Many
+                                # One2One remains One2One
+
+                                info = rel.info
+                                res["relationships"][backref_name] = {
+                                    "id": backref_name,
+                                    "label": backref_name.replace(
+                                        "_", " "
+                                    ).capitalize(),
+                                    "type": ftype,
+                                    "nullable": True,
+                                    "model": model.__registry_name__,
+                                    "local_columns": format_cols(
+                                        info.get("remote_columns", [])
+                                    ),
+                                    "remote_columns": format_cols(
+                                        info.get("local_columns", [])
+                                    ),
+                                    "remote_name": rel_name,
+                                }
+
+                    # Check dynamically generated fields
+                    for component in getattr(rel, "generated_fields", []):
+                        if component.model_name == cls.__registry_name__:
+                            name = component.attribute_name
+                            if isinstance(component, FakeColumn):
+                                if name not in res["columns"]:
+                                    res["columns"][name] = enrich_field(
+                                        name, component
+                                    )
+                            elif isinstance(component, FakeRelationShip):
+                                if name not in res["relationships"]:
+                                    res["relationships"][name] = enrich_rel(
+                                        name, component
+                                    )
+
+            return res
+        finally:
+            if hasattr(cls, "_anyblok_introspection_lock"):
+                del cls._anyblok_introspection_lock
 
     @classmethod
     def get_where_clause_from_primary_keys(cls, **pks):
@@ -297,161 +469,33 @@ class SqlMixin:
 
         :type: list of the primary keys name
         """
-        return list(
-            {
-                column.key
-                for column in cls.anyblok.get(
-                    cls.__registry_name__
-                ).SQLAMapper.primary_key
-            }
-        )
+        structure = cls.__registry_get_structure__()
+        res = set()
+        for name, info in structure.get("columns", {}).items():
+            if info.get("primary_key"):
+                res.add(name)
+
+        return list(res)
 
     @classmethod
-    def _fields_description_field(cls):
+    def fields_description(cls, fields=None):
+        structure = cls.__registry_get_structure__()
         res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
-            "fields"
-        ]
-        for cname in cls.loaded_fields:
-            ftype = fsp[cname].__class__.__name__
-            res[cname] = dict(
-                id=cname,
-                label=cls.loaded_fields[cname],
-                type=ftype,
-                nullable=True,
-                primary_key=False,
-                model=None,
-            )
-            fsp[cname].update_description(
-                cls.anyblok, cls.__registry_name__, res[cname]
-            )
+        for key in ("fields", "columns", "relationships"):
+            res.update(structure.get(key, {}))
+
+        if fields:
+            if isinstance(fields, str):
+                fields = [fields]
+
+            return {x: y for x, y in res.items() if x in fields}
 
         return res
-
-    @classmethod
-    def _fields_description_column(cls):
-        res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
-            "columns"
-        ]
-        for field in cls.SQLAMapper.columns:
-            if field.key not in fsp:
-                continue
-
-            ftype = fsp[field.key].__class__.__name__
-            res[field.key] = dict(
-                id=field.key,
-                label=field.info.get("label"),
-                type=ftype,
-                nullable=field.nullable,
-                primary_key=field.primary_key,
-                model=field.info.get("remote_model"),
-            )
-            fsp[field.key].update_description(
-                cls.anyblok, cls.__registry_name__, res[field.key]
-            )
-
-        return res
-
-    @classmethod
-    def _fields_description_relationship(cls):
-        res = {}
-        fsp = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__][
-            "relationships"
-        ]
-        for field in cls.SQLAMapper.relationships:
-            key = (
-                field.key[len(anyblok_column_prefix) :]
-                if field.key.startswith(anyblok_column_prefix)
-                else field.key
-            )
-            ftype = fsp[key].__class__.__name__
-            if ftype == "FakeRelationShip":
-                Model = field.mapper.entity
-                model = Model.__registry_name__
-                nullable = True
-                remote_name = field.back_populates
-                if remote_name.startswith(anyblok_column_prefix):
-                    remote_name = remote_name[len(anyblok_column_prefix) :]
-
-                remote = getattr(Model, remote_name)
-                remote_columns = remote.info.get("local_columns", [])
-                local_columns = remote.info.get("remote_columns", [])
-                rtype = remote.info["rtype"]
-                if rtype == "Many2One":
-                    ftype = "One2Many"
-                elif rtype == "Many2Many":
-                    ftype = "Many2Many"
-                elif rtype == "One2One":
-                    ftype = "One2One"
-            else:
-                local_columns = field.info.get("local_columns", [])
-                remote_columns = field.info.get("remote_columns", [])
-                nullable = field.info.get("nullable", True)
-                model = field.info.get("remote_model")
-                remote_name = field.info.get("remote_name")
-
-            res[key] = dict(
-                id=key,
-                label=field.info.get("label"),
-                type=ftype,
-                nullable=nullable,
-                model=model,
-                local_columns=local_columns,
-                remote_columns=remote_columns,
-                remote_name=remote_name,
-                primary_key=False,
-            )
-            fsp[key].update_description(
-                cls.anyblok, cls.__registry_name__, res[key]
-            )
-
-        return res
-
-    @ClassMethodCache()
-    def _fields_description(cls):
-        """Return the information of the Field, Column, RelationShip"""
-        res = {}
-        res.update(cls._fields_description_field())
-        res.update(cls._fields_description_column())
-        res.update(cls._fields_description_relationship())
-        return res
-
-    @classmethod
-    def _fields_name_field(cls):
-        return [cname for cname in cls.loaded_fields]
-
-    @classmethod
-    def _fields_name_column(cls):
-        return [field.key for field in cls.SQLAMapper.columns]
-
-    @classmethod
-    def _fields_name_relationship(cls):
-        return [
-            (
-                field.key[len(anyblok_column_prefix) :]
-                if field.key.startswith(anyblok_column_prefix)
-                else field.key
-            )
-            for field in cls.SQLAMapper.relationships
-        ]
 
     @ClassMethodCache()
     def fields_name(cls):
         """Return the name of the Field, Column, RelationShip"""
-        res = []
-        res.extend(cls._fields_name_field())
-        res.extend(cls._fields_name_column())
-        res.extend(cls._fields_name_relationship())
-        return list(set(res))
-
-    @classmethod
-    def fields_description(cls, fields=None):
-        res = cls._fields_description()
-        if fields:
-            return {x: y for x, y in res.items() if x in fields}
-
-        return res
+        return list(cls.fields_description().keys())
 
     @ClassMethodCache()
     def get_hybrid_property_columns(cls):
@@ -625,49 +669,33 @@ class SqlMixin:
     @ClassMethodCache()
     def find_remote_attribute_to_expire(cls, *fields):
         res = uniquedict()
-        _fields = []
-        _fields.extend(fields)
-        Model = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
+        _fields = list(fields)
+        Model = cls.__registry_get_structure__()
         while _fields:
             field = _fields.pop()
             field = field if isinstance(field, str) else field.name
 
             if field in Model["columns"]:
-                _fields.extend(
-                    x
-                    for x, y in Model["relationships"].items()
-                    if not isinstance(y, Many2Many)
-                    for mapper in y.column_names
-                    if mapper.attribute_name == field
-                )
-                _field = Model["columns"][field]
-                if (
-                    not isinstance(_field, FakeColumn) and _field.foreign_key
-                ):  # pragma: no cover
-                    rmodel = cls.anyblok.loaded_namespaces_first_step[
-                        _field.foreign_key.model_name
-                    ]
-                    for rc in [
-                        x
-                        for x, y in rmodel["relationships"].items()
-                        for mapper in y.remote_columns
-                        if mapper.attribute_name == field
-                    ]:
-                        rfield = rmodel["relationships"][rc]
-                        if isinstance(rfield, FakeRelationShip):
-                            res.add_in_res(rfield.mapper.attribute_name, [rc])
-                        elif "backref" in rfield.kwargs:
-                            res.add_in_res(rfield.kwargs["backref"][0], [rc])
+                for rel_name, rel in Model["relationships"].items():
+                    if rel["type"] != "Many2Many":
+                        if field in rel["local_columns"]:
+                            _fields.append(rel_name)
+
+                col_meta = Model["columns"][field]
+                remote_model_name = col_meta.get("model")
+                if remote_model_name:
+                    registry = cls.anyblok
+                    rmodel_cls = registry.get(remote_model_name)
+                    rmodel_meta = rmodel_cls.__registry_get_structure__()
+                    for rel_name, rel in rmodel_meta["relationships"].items():
+                        if field in rel["remote_columns"]:
+                            if rel.get("remote_name"):
+                                res.add_in_res(rel["remote_name"], [rel_name])
 
             elif field in Model["relationships"]:
-                _field = Model["relationships"][field]
-                if isinstance(_field, FakeRelationShip):  # pragma: no cover
-                    res.add_in_res(field, [_field.mapper.attribute_name])
-                elif (
-                    not isinstance(_field, Many2Many)
-                    and "backref" in _field.kwargs
-                ):
-                    res.add_in_res(field, [_field.kwargs["backref"][0]])
+                rel_meta = Model["relationships"][field]
+                if rel_meta.get("remote_name"):
+                    res.add_in_res(field, [rel_meta["remote_name"]])
 
         return res
 
@@ -676,13 +704,12 @@ class SqlMixin:
         """Find column and relation ship link with the column or relationship
         passed in fields.
 
-        :param _*fields: lists of the attribute name
+        :param *fields: lists of the attribute name
         :rtype: list of the attribute name of the attribute and relation ship
         """
         res = []
-        _fields = []
-        _fields.extend(fields)
-        Model = cls.anyblok.loaded_namespaces_first_step[cls.__registry_name__]
+        _fields = list(fields)
+        Model = cls.__registry_get_structure__()
         while _fields:
             field = _fields.pop()
             if not isinstance(field, str):
@@ -693,18 +720,14 @@ class SqlMixin:
 
             res.append(field)
             if field in Model["columns"]:
-                _fields.extend(
-                    x
-                    for x, y in Model["relationships"].items()
-                    if not isinstance(y, Many2Many)
-                    for mapper in y.column_names
-                    if mapper.attribute_name == field
-                )
+                for rel_name, rel in Model["relationships"].items():
+                    if rel["type"] != "Many2Many":
+                        if field in rel["local_columns"]:
+                            _fields.append(rel_name)
             elif field in Model["relationships"]:
-                _field = Model["relationships"][field]
-                if not isinstance(_field, Many2Many):
-                    for mapper in _field.column_names:
-                        _fields.append(mapper.attribute_name)
+                rel = Model["relationships"][field]
+                if rel["type"] != "Many2Many":
+                    _fields.extend(rel["local_columns"])
 
         return res
 

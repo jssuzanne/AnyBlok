@@ -621,6 +621,10 @@ class Registry:
     def has(self, namespace):
         return True if namespace in self.loaded_namespaces else False
 
+    def get_all_models(self):
+        """Return all model classes in the registry"""
+        return self.loaded_namespaces.values()
+
     def get_bloks_by_states(self, *states):
         """Return the bloks in these states
 

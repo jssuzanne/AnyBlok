@@ -218,33 +218,56 @@ class BlokManager:
 
         EnvironmentManager.set("current_blok", "start")
 
-        bloks = []
-        for entry_point in entry_points:
-            count = 0
-            for i in iter_entry_points(entry_point):
-                count += 1
-                blok = i.load()
-                blok.required_by = []
-                blok.optional_by = []
-                blok.conditional_by = []
-                blok.conflicting_by = []
-                cls.set(i.name, blok)
-                blok.name = i.name
-                bloks.append((blok.priority, i.name))
-
-            if not count:
-                raise BlokManagerException(
-                    "Invalid bloks group %r" % entry_point
-                )
-
-        # Empty the ordered blok to reload it depending on the priority
-        cls.ordered_bloks = []
-        bloks.sort()
-
         try:
-            while bloks:
-                blok = bloks.pop(0)[1]
-                cls.get_needed_blok(blok)
+            # 1. Discovery phase
+            for entry_point in entry_points:
+                count = 0
+                for i in iter_entry_points(entry_point):
+                    count += 1
+                    blok = i.load()
+                    blok.required_by = []
+                    blok.optional_by = []
+                    blok.conditional_by = []
+                    blok.conflicting_by = []
+                    cls.set(i.name, blok)
+                    blok.name = i.name
+
+                if not count:
+                    raise BlokManagerException(
+                        "Invalid bloks group %r" % entry_point
+                    )
+
+            # 2. Dependency expansion (to find UndefinedBloks)
+            to_process = list(cls.bloks.keys())
+            processed = set()
+            while to_process:
+                name = to_process.pop(0)
+                if name in processed:
+                    continue
+                processed.add(name)
+                blok = cls.bloks[name]
+                for dep in getattr(blok, "required", []):
+                    if dep not in cls.bloks:
+                        cls.add_undefined_blok(dep)
+                    to_process.append(dep)
+
+            # 3. Resolve order using TopologicalSorter
+            from .loader import AnyBlokLoaderError, resolve_dependencies
+
+            try:
+                order = resolve_dependencies(cls.bloks)
+            except AnyBlokLoaderError as e:
+                raise BlokManagerException(str(e))
+
+            # 4. Loading phase
+            cls.ordered_bloks = []
+            for blok_name in order:
+                if not cls.has(blok_name):
+                    cls.get_needed_blok_dependencies(blok_name)
+                    cls.ordered_bloks.append(blok_name)
+                    cls.blok_importers(blok_name)
+                    if cls.bloks[blok_name].autoinstall:
+                        cls.auto_install.append(blok_name)
 
         finally:
             EnvironmentManager.set("current_blok", None)

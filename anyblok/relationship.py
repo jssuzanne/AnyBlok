@@ -241,6 +241,7 @@ class RelationShip(Field):
 
         self.info["remote_model"] = self.model.model_name
         self.backref_properties = {}
+        self.generated_fields = []
 
     def __set_name__(self, owner, name):
         if not hasattr(owner, "__declared_relationships__"):
@@ -325,7 +326,9 @@ class RelationShip(Field):
             )
             mapper = ModelAttribute(self.model.model_name, _backref)
             if not mapper.is_declared(registry):
-                mapper.add_fake_relationship(registry, namespace, fieldname)
+                mapper.add_fake_relationship(
+                    registry, namespace, fieldname, source=self
+                )
 
     def get_relationship_cls(self):
         return relationship
@@ -344,7 +347,7 @@ class RelationShip(Field):
         self.model.check_model(registry)
         self.format_label(fieldname)
         self.info["label"] = self.label
-        self.info["rtype"] = self.__class__.__name__
+        self.info["type"] = self.__class__.__name__
 
         if "info" not in self.kwargs:
             self.kwargs["info"] = {}
@@ -604,7 +607,7 @@ class Many2One(RelationShip):
                 rc, remote_type = self.get_column_information(
                     registry, cname, remote_types, fieldname
                 )
-                cname.add_fake_column(registry)
+                cname.add_fake_column(registry, source=self)
                 foreign_key = remote_columns[rc].get_fk_name(registry)
                 self.create_column(cname, remote_type, foreign_key, properties)
                 add_fksc = True
@@ -1022,12 +1025,8 @@ class Many2Many(RelationShip):
                 for x in self.remote_columns
             ]
 
-        self.info["local_columns"] = [
-            x.attribute_name for x in local_columns
-        ]
-        self.info["remote_columns"] = [
-            x.attribute_name for x in remote_columns
-        ]
+        self.info["local_columns"] = [x.attribute_name for x in local_columns]
+        self.info["remote_columns"] = [x.attribute_name for x in remote_columns]
 
         return local_columns, remote_columns
 

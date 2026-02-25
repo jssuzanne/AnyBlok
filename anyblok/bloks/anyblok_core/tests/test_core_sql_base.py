@@ -72,10 +72,6 @@ class TestCoreSqlBase:
     def test_fields_description(self, rollback_registry):
         registry = rollback_registry
         Cache = registry.System.Cache
-        selections = [
-            (k, v.__doc__ and v.__doc__.split("\n")[0] or k)
-            for k, v in registry.loaded_namespaces.items()
-        ]
         res = {
             "id": {
                 "id": "id",
@@ -100,7 +96,8 @@ class TestCoreSqlBase:
                 "nullable": False,
                 "primary_key": False,
                 "type": "ModelSelection",
-                "selections": selections,
+                "selections": "Lazy",
+                "validator": "None",
             },
         }
         assert Cache.fields_description() == res
@@ -134,7 +131,7 @@ class TestCoreSqlBase:
             }
         }
         assert Blok.fields_description(fields=["short_description"]) == res
-        Blok.loaded_fields["short_description"] = "Test"
+        Blok.__declared_fields__["short_description"].label = "Test"
         assert Blok.fields_description(fields=["short_description"]) == res
         Blok.clear_all_model_caches()
         assert Blok.fields_description(fields=["short_description"]) != res

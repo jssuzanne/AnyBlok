@@ -76,13 +76,22 @@ class MapperException(AttributeError):
 class FakeColumn:
     db_column_name = None
 
+    def __init__(self, model_name=None, attribute_name=None):
+        self.model_name = model_name
+        self.attribute_name = attribute_name
+        self.info = {}
+        self.kwargs = {}
+
     def update_description(self, registry, model, res):
         pass
 
 
 class FakeRelationShip:
-    def __init__(self, mapper):
+    def __init__(self, mapper, model_name=None, attribute_name=None):
         self.mapper = mapper
+        self.model_name = model_name
+        self.attribute_name = attribute_name
+        self.info = {}
 
     def update_description(self, registry, model, res):
         pass
@@ -262,18 +271,28 @@ class ModelAttribute:
 
         return remote.get_complete_name(registry)
 
-    def add_fake_column(self, registry):
+    def add_fake_column(self, registry, source=None):
         Model = self.check_model_in_first_step(registry)["columns"]
         if self.attribute_name in Model:
             return
 
-        Model[self.attribute_name] = FakeColumn()
+        fake = FakeColumn(self.model_name, self.attribute_name)
+        Model[self.attribute_name] = fake
+        if source:
+            source.generated_fields.append(fake)
 
-    def add_fake_relationship(self, registry, namespace, fieldname):
+    def add_fake_relationship(
+        self, registry, namespace, fieldname, source=None
+    ):
         Model = self.check_model_in_first_step(registry)["relationships"]
-        Model[self.attribute_name] = FakeRelationShip(
-            ModelAttribute(namespace, fieldname)
+        fake = FakeRelationShip(
+            ModelAttribute(namespace, fieldname),
+            self.model_name,
+            self.attribute_name,
         )
+        Model[self.attribute_name] = fake
+        if source:
+            source.generated_fields.append(fake)
 
     def get_column_name(self, registry):
         """Return the name of the column
