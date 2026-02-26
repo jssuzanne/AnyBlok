@@ -311,6 +311,25 @@ class Model:
             for b_ns in b.__anyblok_bases__:
                 bases.insert(0, b_ns.__registry_name__)
 
+            # Aggregation from Registry Mixin cache
+            registry_name = getattr(b, "__registry_name__", None)
+            if (
+                registry_name
+                and hasattr(registry, "_anyblok_mixins_structure_cache")
+                and registry_name in registry._anyblok_mixins_structure_cache
+            ):
+                mixin_struct = registry._anyblok_mixins_structure_cache[
+                    registry_name
+                ]
+                for key in ("columns", "relationships", "fields", "caches"):
+                    properties.setdefault(key, {}).update(
+                        deepcopy(mixin_struct.get(key, {}))
+                    )
+                for key in ("hybrid_methods", "events", "sqlalchemy_events"):
+                    properties.setdefault(key, set()).update(
+                        deepcopy(mixin_struct.get(key, set()))
+                    )
+
             bases.insert(0, b)
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
@@ -689,4 +708,10 @@ class Model:
 
         bloks = Blok.list_by_state("touninstall")
         Blok.uninstall_all(*bloks)
-        return Blok.apply_state(*registry.ordered_loaded_bloks)
+        res = Blok.apply_state(*registry.ordered_loaded_bloks)
+
+        # Clear the temporary Mixin structure cache
+        if hasattr(registry, "_anyblok_mixins_structure_cache"):
+            registry._anyblok_mixins_structure_cache = {}
+
+        return res

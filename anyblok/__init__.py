@@ -137,7 +137,7 @@ def start(
 
 from .declarations import Declarations  # noqa
 from . import core  # noqa
-from . import model  # noqa
 from . import mixin  # noqa
+from . import model  # noqa
 from .authorization import binding  # noqa
 from .imp import reload_module_if_blok_is_reloading  # noqa
