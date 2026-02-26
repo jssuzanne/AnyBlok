@@ -1627,6 +1627,48 @@ class Registry:
         self.reload()
         self.expire_all()
 
+    def get_fingerprint(self):
+        """Generate a SHA256 fingerprint of the current environment
+        (loaded Bloks + versions) to decide if the registry structure cache
+        is still valid.
+        """
+        import hashlib
+
+        hasher = hashlib.sha256()
+        for blok_name in sorted(self.ordered_loaded_bloks):
+            hasher.update(blok_name.encode("utf-8"))
+            try:
+                b = BlokManager.get(blok_name)
+                if hasattr(b, "version") and b.version:
+                    hasher.update(b.version.encode("utf-8"))
+            except Exception:
+                pass
+
+        # Include loaded model names to avoid collision during testing
+        model_names = self.loaded_registries.get("Model_names", [])
+        for model_name in sorted(model_names):
+            hasher.update(model_name.encode("utf-8"))
+
+        return hasher.hexdigest()
+
+    def clear_cache(self):
+        """Clear the persistent registry cache from disk and the database."""
+        import os
+
+        cache_file = ".anyblok_cache"
+        if os.path.exists(cache_file):
+            try:
+                os.remove(cache_file)
+            except Exception:
+                pass
+        try:
+            self.execute(
+                "DELETE FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
+            )
+            self.commit()
+        except Exception:
+            self.rollback()
+
     @log(logger, level="debug")
     def update_blok_list(self):
         if not self.blok_list_is_loaded:

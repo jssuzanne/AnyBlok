@@ -573,12 +573,95 @@ class Model:
 
         # Now that all models are assembled, pre-assemble their components
         # This allows backref discovery to see all models
-        for namespace in registry.loaded_registries["Model_names"]:
-            model = registry.loaded_namespaces[namespace]
-            if hasattr(model, "__registry_get_structure__"):
-                model.__anyblok_assembled_components__ = (
-                    model.__registry_get_structure__()
-                )
+        import json
+        import os
+        import pickle
+
+        cache_file = ".anyblok_cache"
+        fingerprint = registry.get_fingerprint()
+
+        # Try to load fingerprint from DB using a raw connection to avoid uninitialized session issues
+        db_fingerprint = None
+        try:
+            from sqlalchemy import text
+
+            with registry.engine.connect() as conn:
+                res = conn.execute(
+                    text(
+                        "SELECT value FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
+                    )
+                ).fetchone()
+                if res and res[0]:
+                    db_fingerprint = json.loads(res[0]).get("value")
+            registry.engine.dispose()
+        except Exception:
+            pass
+
+        cached_data = None
+        if db_fingerprint == fingerprint and os.path.exists(cache_file):
+            try:
+                with open(cache_file, "rb") as f:
+                    cached_data = pickle.load(f)
+            except Exception:
+                pass
+
+        if cached_data is not None:
+            for namespace in registry.loaded_registries["Model_names"]:
+                model = registry.loaded_namespaces[namespace]
+                if (
+                    hasattr(model, "__registry_get_structure__")
+                    and namespace in cached_data
+                ):
+                    model.__anyblok_assembled_components__ = cached_data[
+                        namespace
+                    ]
+        else:
+            cached_data = {}
+            for namespace in registry.loaded_registries["Model_names"]:
+                model = registry.loaded_namespaces[namespace]
+                if hasattr(model, "__registry_get_structure__"):
+                    model.__anyblok_assembled_components__ = (
+                        model.__registry_get_structure__()
+                    )
+                    cached_data[
+                        namespace
+                    ] = model.__anyblok_assembled_components__
+
+            # Save the new cache and update DB safely
+            try:
+                with open(cache_file, "wb") as f:
+                    pickle.dump(cached_data, f)
+            except Exception:
+                pass
+
+            # Update DB fingerprint using a raw connection
+            try:
+                from sqlalchemy import text
+
+                val = json.dumps({"value": fingerprint})
+                with registry.engine.connect() as conn:
+                    with conn.begin():
+                        conn.execute(
+                            text(
+                                "UPDATE system_parameter SET value = :val WHERE key = 'anyblok.registry.fingerprint'"
+                            ),
+                            {"val": val},
+                        )
+                        res = conn.execute(
+                            text(
+                                "SELECT 1 FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
+                            )
+                        ).fetchone()
+                        if not res:
+                            conn.execute(
+                                text(
+                                    "INSERT INTO system_parameter (key, value, multi) VALUES ('anyblok.registry.fingerprint', :val, False)"
+                                ),
+                                {"val": val},
+                            )
+                registry.engine.dispose()
+            except Exception:
+                pass
 
     @classmethod
     def initialize_callback(cls, registry):
