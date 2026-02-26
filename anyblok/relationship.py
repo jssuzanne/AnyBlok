@@ -266,6 +266,14 @@ class RelationShip(Field):
             owner.__declared_relationships__ = {}
 
         owner.__declared_relationships__[name] = self
+        from .declarations import Declarations
+
+        Declarations.init_pre_structure(owner)
+        if (
+            hasattr(owner, "__anyblok_pre_structure__")
+            and "__anyblok_pre_structure__" in owner.__dict__
+        ):
+            owner.__anyblok_pre_structure__["relationships"][name] = self
 
     def autodoc_get_properties(self):
         res = super(RelationShip, self).autodoc_get_properties()

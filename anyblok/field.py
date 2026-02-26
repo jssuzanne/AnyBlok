@@ -68,6 +68,15 @@ class Field:
 
         owner.__declared_fields__[name] = self
 
+        from .declarations import Declarations
+
+        Declarations.init_pre_structure(owner)
+        if (
+            hasattr(owner, "__anyblok_pre_structure__")
+            and "__anyblok_pre_structure__" in owner.__dict__
+        ):
+            owner.__anyblok_pre_structure__["fields"][name] = self
+
     def forbid_instance(self, cls):
         """Raise an exception if the cls is an instance of this __class__
 

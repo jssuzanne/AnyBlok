@@ -102,6 +102,19 @@ class TestModel:
         self.assertInModel(MyModel, OneModel)
         self.assertInRemoved(OneModel)
 
+    def test_anyblok_pre_structure(self):
+        @register(Model)
+        class MyModel:
+            id = Integer(primary_key=True)
+            name = String()
+
+        assert hasattr(MyModel, "__anyblok_pre_structure__")
+        pre = MyModel.__anyblok_pre_structure__
+        assert "id" in pre["columns"]
+        assert "name" in pre["columns"]
+        assert pre["columns"]["id"] is MyModel.id
+        assert pre["columns"]["name"] is MyModel.name
+
 
 def simple_model():
     @register(Model)
