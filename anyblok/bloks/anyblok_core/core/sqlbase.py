@@ -19,7 +19,7 @@ from anyblok.common import anyblok_column_prefix
 from anyblok.declarations import ClassMethodCache, Declarations
 from anyblok.field import FieldException
 from anyblok.mapper import FakeColumn, FakeRelationShip
-from anyblok.relationship import Many2Many
+from anyblok.relationship import Many2One, One2Many, One2One
 
 from ..exceptions import SqlBaseException
 
@@ -44,6 +44,7 @@ def format_cols(cols):
 
 class SqlMixin:
     __db_schema__ = None
+    __anyblok_assembled_components__ = None
 
     def __repr__(self):
         state = inspect(self)
@@ -96,6 +97,7 @@ class SqlMixin:
     @classmethod
     def clear_all_model_caches(cls):
         super().clear_all_model_caches()
+        cls.__anyblok_assembled_components__ = None
         Cache = cls.anyblok.System.Cache
         Cache.invalidate(cls, "__registry_get_structure__")
         Cache.invalidate(cls, "fields_name")
@@ -203,190 +205,274 @@ class SqlMixin:
         alias.anyblok = cls.anyblok
         return alias
 
+    @classmethod
+    def _enrich_field(cls, name, field):
+        info = field.info.copy()
+        val = {
+            "id": name,
+            "label": info.get("label") or name.replace("_", " ").capitalize(),
+            "type": field.__class__.__name__,
+            "nullable": field.kwargs.get("nullable", True),
+            "primary_key": field.kwargs.get("primary_key", False),
+            "model": getattr(field, "foreign_key", None),
+        }
+        if hasattr(val["model"], "model_name"):
+            val["model"] = val["model"].model_name
+
+        val.update(info)
+        if hasattr(field, "update_description"):
+            field.update_description(cls.anyblok, cls.__registry_name__, val)
+
+        return val
+
+    @classmethod
+    def _enrich_rel(cls, name, rel):
+        info = rel.info.copy()
+        ftype = rel.__class__.__name__
+
+        local_columns = []
+        remote_columns = []
+        primary_key = False
+        nullable = True
+        model = info.get("remote_model")
+        remote_name = info.get("remote_name")
+
+        if ftype == "FakeRelationShip":
+            remote_model_name = rel.mapper.model_name
+            model = remote_model_name
+            registry = cls.anyblok
+            remote_rel_name = rel.mapper.attribute_name
+            remote_rel = (
+                registry.loaded_namespaces_first_step.get(remote_model_name, {})
+                .get("relationships", {})
+                .get(remote_rel_name)
+            )
+
+            if remote_rel:
+                remote_name = remote_rel_name
+                local_columns = getattr(remote_rel, "remote_columns", [])
+                remote_columns = getattr(remote_rel, "local_columns", [])
+                remote_rtype = remote_rel.__class__.__name__
+                if remote_rtype == "Many2One":
+                    ftype = "One2Many"
+                elif remote_rtype == "Many2Many":
+                    ftype = "Many2Many"
+                elif remote_rtype == "One2One":
+                    ftype = "One2One"
+        else:
+            local_columns = info.get("local_columns", [])
+            remote_columns = info.get("remote_columns", [])
+            nullable = info.get("nullable", True)
+
+        val = {
+            "id": name,
+            "label": info.get("label") or name.replace("_", " ").capitalize(),
+            "type": ftype,
+            "nullable": nullable,
+            "primary_key": primary_key,
+            "model": model,
+            "local_columns": format_cols(local_columns),
+            "remote_columns": format_cols(remote_columns),
+            "remote_name": remote_name,
+        }
+        val.update(info)
+        if hasattr(rel, "update_description"):
+            rel.update_description(cls.anyblok, cls.__registry_name__, val)
+
+        return val
+
+    @classmethod
+    def _fill_from_depends(cls, structure):
+        """Recursive topological merge of parents."""
+        from graphlib import TopologicalSorter
+
+        ts = TopologicalSorter()
+
+        models = {cls.__registry_name__: cls}
+
+        def collect_parents(curr):
+            bases = getattr(curr, "__anyblok_bases__", [])
+            deps = []
+            for base in bases:
+                name = base.__registry_name__
+                if name not in models:
+                    try:
+                        models[name] = cls.anyblok.get(name)
+                    except Exception:  # RegistryManagerException
+                        models[name] = base
+                deps.append(name)
+
+            ts.add(curr.__registry_name__, *deps)
+            for dep in deps:
+                if models[dep]:
+                    collect_parents(models[dep])
+
+        collect_parents(cls)
+
+        for name in ts.static_order():
+            if name == cls.__registry_name__:
+                continue
+
+            parent = models[name]
+            if parent and hasattr(parent, "__registry_get_structure__"):
+                assembled = parent.__registry_get_structure__()
+                if assembled:
+                    structure["fields"].update(assembled.get("fields", {}))
+                    structure["columns"].update(assembled.get("columns", {}))
+                    structure["relationships"].update(
+                        assembled.get("relationships", {})
+                    )
+
+    @classmethod
+    def _fill_from_local_declarations(cls, structure):
+        """Add what is in first_step columns/relationships."""
+        first_step = cls.anyblok.loaded_namespaces_first_step.get(
+            cls.__registry_name__, {}
+        )
+        print(
+            "DEBUG: %s local columns: %s"
+            % (
+                cls.__registry_name__,
+                list(first_step.get("columns", {}).keys()),
+            )
+        )
+        print(
+            "DEBUG: %s local relationships: %s"
+            % (
+                cls.__registry_name__,
+                list(first_step.get("relationships", {}).keys()),
+            )
+        )
+        for name, field in first_step.get("fields", {}).items():
+            structure["fields"][name] = cls._enrich_field(name, field)
+
+        for name, col in first_step.get("columns", {}).items():
+            structure["columns"][name] = cls._enrich_field(name, col)
+
+        for name, rel in first_step.get("relationships", {}).items():
+            structure["relationships"][name] = cls._enrich_rel(name, rel)
+
+    @classmethod
+    def _fill_from_backrefs(cls, structure):
+        """Scan all models for inverse relationships and generated fields."""
+        for model in cls.anyblok.get_all_models():
+            for rel_name, rel in getattr(
+                model, "__declared_relationships__", {}
+            ).items():
+                # Check manually defined backrefs
+                backref_name = rel.kwargs.get("backref")
+                if not backref_name:
+                    if rel.__class__.__name__ == "Many2Many":
+                        backref_name = rel.kwargs.get("many2many")
+                    elif rel.__class__.__name__ in ("One2Many", "One2One"):
+                        backref_name = rel.kwargs.get("many2one")
+
+                if backref_name:
+                    if isinstance(backref_name, (list, tuple)):
+                        backref_name = backref_name[0]
+
+                    target_model = rel.model
+                    if hasattr(target_model, "model_name"):
+                        target_model = target_model.model_name
+
+                    if target_model == cls.__registry_name__:
+                        if backref_name not in structure["relationships"]:
+                            ftype = rel.__class__.__name__
+                            if ftype == "Many2One":
+                                ftype = "One2Many"
+                            elif ftype == "One2Many":
+                                ftype = "Many2One"
+                            elif ftype == "One2One":
+                                ftype = "One2One"
+                            elif ftype == "Many2Many":
+                                ftype = "Many2Many"
+
+                            info = rel.info
+                            structure["relationships"][backref_name] = {
+                                "id": backref_name,
+                                "label": backref_name.replace(
+                                    "_", " "
+                                ).capitalize(),
+                                "type": ftype,
+                                "nullable": True,
+                                "model": model.__registry_name__,
+                                "local_columns": format_cols(
+                                    info.get("remote_columns", [])
+                                ),
+                                "remote_columns": format_cols(
+                                    info.get("local_columns", [])
+                                ),
+                                "remote_name": rel_name,
+                            }
+
+                # Check dynamically generated fields (e.g. intermediate FakeRelationShip)
+                generated = getattr(rel, "generated_fields", [])
+                if isinstance(generated, list):
+                    for component in generated:
+                        if (
+                            getattr(component, "model_name", None)
+                            == cls.__registry_name__
+                        ):
+                            from anyblok.mapper import (
+                                FakeColumn,
+                                FakeRelationShip,
+                            )
+
+                            name = getattr(component, "attribute_name", None)
+                            if not name:
+                                continue
+                            if (
+                                component.__class__.__name__ == "FakeColumn"
+                                or isinstance(component, FakeColumn)
+                            ):
+                                if name not in structure["columns"]:
+                                    structure["columns"][
+                                        name
+                                    ] = cls._enrich_field(name, component)
+                            elif (
+                                component.__class__.__name__
+                                == "FakeRelationShip"
+                                or isinstance(component, FakeRelationShip)
+                            ):
+                                if name not in structure["relationships"]:
+                                    structure["relationships"][
+                                        name
+                                    ] = cls._enrich_rel(name, component)
+                                elif (
+                                    isinstance(
+                                        structure["relationships"][name], dict
+                                    )
+                                    and structure["relationships"][name].get(
+                                        "type"
+                                    )
+                                    == "FakeRelationShip"
+                                ):
+                                    structure["relationships"][name].update(
+                                        cls._enrich_rel(name, component)
+                                    )
+
     @ClassMethodCache()
     def __registry_get_structure__(cls):
         """Universal source of truth for model structure.
         Declaration-driven and optimized via injection-at-construction.
         """
+        if cls.__anyblok_assembled_components__ is not None:
+            return cls.__anyblok_assembled_components__
+
         cls._anyblok_introspection_lock = True
         try:
             res = {
                 "columns": {},
                 "relationships": {},
                 "fields": {},
-                "tablename": cls.__tablename__,
+                "tablename": getattr(cls, "__tablename__", None),
                 "schema": getattr(cls, "__db_schema__", None),
             }
             res.update(super().__registry_get_structure__())
 
-            for base in cls.__anyblok_bases__:
-                BaseModel = cls.anyblok.loaded_namespaces.get(
-                    base.__registry_name__
-                )
-                if BaseModel:
-                    assembled = BaseModel.__registry_get_structure__()
-                    if assembled:
-                        res["fields"].update(assembled.get("fields", {}))
-                        res["columns"].update(assembled.get("columns", {}))
-                        res["relationships"].update(
-                            assembled.get("relationships", {})
-                        )
-
-            def enrich_field(name, field):
-                info = field.info.copy()
-                val = {
-                    "id": name,
-                    "label": info.get("label")
-                    or name.replace("_", " ").capitalize(),
-                    "type": field.__class__.__name__,
-                    "nullable": field.kwargs.get("nullable", True),
-                    "primary_key": field.kwargs.get("primary_key", False),
-                    "model": getattr(field, "foreign_key", None),
-                }
-                if hasattr(val["model"], "model_name"):
-                    val["model"] = val["model"].model_name
-
-                val.update(info)
-                if hasattr(field, "update_description"):
-                    field.update_description(
-                        cls.anyblok, cls.__registry_name__, val
-                    )
-                return val
-
-            def enrich_rel(name, rel):
-                info = rel.info.copy()
-                ftype = rel.__class__.__name__
-
-                local_columns = []
-                remote_columns = []
-                primary_key = False
-                nullable = True
-                model = info.get("remote_model")
-                remote_name = info.get("remote_name")
-
-                if ftype == "FakeRelationShip":
-                    remote_model_name = rel.mapper.model_name
-                    model = remote_model_name
-                    registry = cls.anyblok
-                    remote_rel_name = rel.mapper.attribute_name
-                    remote_rel = (
-                        registry.loaded_namespaces_first_step.get(
-                            remote_model_name, {}
-                        )
-                        .get("relationships", {})
-                        .get(remote_rel_name)
-                    )
-
-                    if remote_rel:
-                        remote_name = remote_rel_name
-                        local_columns = getattr(
-                            remote_rel, "remote_columns", []
-                        )
-                        remote_columns = getattr(
-                            remote_rel, "local_columns", []
-                        )
-                        remote_rtype = remote_rel.__class__.__name__
-                        if remote_rtype == "Many2One":
-                            ftype = "One2Many"
-                        elif remote_rtype == "Many2Many":
-                            ftype = "Many2Many"
-                        elif remote_rtype == "One2One":
-                            ftype = "One2One"
-                else:
-                    local_columns = info.get("local_columns", [])
-                    remote_columns = info.get("remote_columns", [])
-                    nullable = info.get("nullable", True)
-
-                val = {
-                    "id": name,
-                    "label": info.get("label")
-                    or name.replace("_", " ").capitalize(),
-                    "type": ftype,
-                    "nullable": nullable,
-                    "primary_key": primary_key,
-                    "model": model,
-                    "local_columns": format_cols(local_columns),
-                    "remote_columns": format_cols(remote_columns),
-                    "remote_name": remote_name,
-                }
-                val.update(info)
-                if hasattr(rel, "update_description"):
-                    rel.update_description(
-                        cls.anyblok, cls.__registry_name__, val
-                    )
-
-                return val
-
-            # 2. Add local declarations
-            for name, field in getattr(cls, "__declared_fields__", {}).items():
-                res["fields"][name] = enrich_field(name, field)
-
-            for name, col in getattr(cls, "__declared_columns__", {}).items():
-                res["columns"][name] = enrich_field(name, col)
-
-            for name, rel in getattr(
-                cls, "__declared_relationships__", {}
-            ).items():
-                res["relationships"][name] = enrich_rel(name, rel)
-
-            # 3. Add generated_fields from all relationships in the registry
-            for model in cls.anyblok.get_all_models():
-                for rel_name, rel in getattr(
-                    model, "__declared_relationships__", {}
-                ).items():
-                    # Check manually defined backrefs
-                    backref_name = rel.kwargs.get("backref")
-                    if backref_name:
-                        if isinstance(backref_name, (list, tuple)):
-                            backref_name = backref_name[0]
-
-                        target_model = rel.model
-                        if hasattr(target_model, "model_name"):
-                            target_model = target_model.model_name
-
-                        if target_model == cls.__registry_name__:
-                            if backref_name not in res["relationships"]:
-                                ftype = rel.__class__.__name__
-                                if ftype == "Many2One":
-                                    ftype = "One2Many"
-                                elif ftype == "One2Many":
-                                    ftype = "Many2One"
-
-                                # Many2Many remains Many2Many
-                                # One2One remains One2One
-
-                                info = rel.info
-                                res["relationships"][backref_name] = {
-                                    "id": backref_name,
-                                    "label": backref_name.replace(
-                                        "_", " "
-                                    ).capitalize(),
-                                    "type": ftype,
-                                    "nullable": True,
-                                    "model": model.__registry_name__,
-                                    "local_columns": format_cols(
-                                        info.get("remote_columns", [])
-                                    ),
-                                    "remote_columns": format_cols(
-                                        info.get("local_columns", [])
-                                    ),
-                                    "remote_name": rel_name,
-                                }
-
-                    # Check dynamically generated fields
-                    for component in getattr(rel, "generated_fields", []):
-                        if component.model_name == cls.__registry_name__:
-                            name = component.attribute_name
-                            if isinstance(component, FakeColumn):
-                                if name not in res["columns"]:
-                                    res["columns"][name] = enrich_field(
-                                        name, component
-                                    )
-                            elif isinstance(component, FakeRelationShip):
-                                if name not in res["relationships"]:
-                                    res["relationships"][name] = enrich_rel(
-                                        name, component
-                                    )
+            cls._fill_from_depends(res)
+            cls._fill_from_local_declarations(res)
+            cls._fill_from_backrefs(res)
 
             return res
         finally:
@@ -609,45 +695,75 @@ class SqlMixin:
                  ]}
              }
         """
-        result = {}
-        cls = self.__class__
-        fields = fields if fields else cls.fields_description().keys()
+        if (
+            not hasattr(self, "_anyblok_to_dict_guard")
+            or self._anyblok_to_dict_guard is None
+        ):
+            self._anyblok_to_dict_guard = set()
 
-        for field in fields:
-            # if field is ("relation_name", ("list", "of", "relation",
-            # "fields")), deal with it.
-            field, related_fields = self._format_field(field)
-            # Get the actual data
-            field_value, field_property = getattr(self, field), None
-            try:
-                field_property = getattr(getattr(cls, field), "property", None)
-            except FieldException:  # pragma: no cover
-                pass
+        guard_key = id(self)
+        if guard_key in self._anyblok_to_dict_guard:
+            return {"id": getattr(self, "id", None)}
 
-            # Deal with this data
-            if field_property is None:
-                # it is the case of field function (hyprid property)
-                result[field] = field_value
-            elif field_value is None or isinstance(
-                field_property, ColumnProperty
-            ):
-                # If value is None, then do not go any further whatever
-                # the column property tells you.
-                result[field] = field_value
-            else:
-                # it is should be RelationshipProperty
-                if related_fields is None:
-                    # If there is no field list to the relation,
-                    # use only primary keys
-                    related_fields = field_property.mapper.entity
-                    related_fields = related_fields.get_primary_keys()
-                # One2One, One2Many, Many2One or Many2Many ?
-                if field_property.uselist:
-                    result[field] = [
-                        r.to_dict(*related_fields) for r in field_value
-                    ]
+        self._anyblok_to_dict_guard.add(guard_key)
+        try:
+            result = {}
+            cls = self.__class__
+            fields = fields if fields else cls.fields_description().keys()
+
+            for field in fields:
+                # if field is ("relation_name", ("list", "of", "relation",
+                # "fields")), deal with it.
+                field, related_fields = self._format_field(field)
+                # Get the actual data
+                field_value, field_property = getattr(self, field), None
+                try:
+                    field_property = getattr(
+                        getattr(cls, field), "property", None
+                    )
+                except FieldException:  # pragma: no cover
+                    pass
+
+                # Deal with this data
+                if field_property is None:
+                    # it is the case of field function (hyprid property)
+                    result[field] = field_value
+                elif field_value is None or isinstance(
+                    field_property, ColumnProperty
+                ):
+                    # If value is None, then do not go any further whatever
+                    # the column property tells you.
+                    result[field] = field_value
                 else:
-                    result[field] = field_value.to_dict(*related_fields)
+                    # it is should be RelationshipProperty
+                    if related_fields is None:
+                        # If there is no field list to the relation,
+                        # use only primary keys
+                        related_fields = field_property.mapper.entity
+                        related_fields = related_fields.get_primary_keys()
+                    # One2One, One2Many, Many2One or Many2Many ?
+                    if field_property.uselist:
+                        result[field] = [
+                            r.to_dict(*related_fields)
+                            if hasattr(r, "to_dict")
+                            else r
+                            for r in field_value
+                        ]
+                    else:
+                        # Ensure field_value is a model instance before calling to_dict
+                        if hasattr(field_value, "to_dict"):
+                            result[field] = field_value.to_dict(*related_fields)
+                        else:
+                            result[field] = field_value
+
+        finally:
+            if (
+                hasattr(self, "_anyblok_to_dict_guard")
+                and self._anyblok_to_dict_guard is not None
+            ):
+                self._anyblok_to_dict_guard.remove(guard_key)
+                if not self._anyblok_to_dict_guard:
+                    self._anyblok_to_dict_guard = None
 
         return result
 

@@ -83,14 +83,16 @@ def base_loaded(request, configuration_loaded):
 
 @pytest.fixture(scope="module")
 def bloks_loaded(request, base_loaded):
-    request.addfinalizer(BlokManager.unload)
-    BlokManager.load()
+    if len(BlokManager.list()) == 0:
+        request.addfinalizer(BlokManager.unload)
+        BlokManager.load()
 
 
 @pytest.fixture(scope="module")
 def testbloks_loaded(request, base_loaded):
-    request.addfinalizer(BlokManager.unload)
-    BlokManager.load(entry_points=("bloks", "test_bloks"))
+    if len(BlokManager.list()) == 0 or "anyblok-test" not in BlokManager.bloks:
+        request.addfinalizer(BlokManager.unload)
+        BlokManager.load(entry_points=("bloks", "test_bloks"))
 
 
 def reset_db():

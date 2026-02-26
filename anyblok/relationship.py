@@ -197,7 +197,10 @@ class RelationShipList:  # don't inherit list
 
 
 class RelationShip(Field):
-    """RelationShip class..."""
+    """RelationShip class
+
+    All relationship must use a subclass
+    """
 
     _standard_args = Field._standard_args | {
         "model",
@@ -242,6 +245,21 @@ class RelationShip(Field):
         self.info["remote_model"] = self.model.model_name
         self.backref_properties = {}
         self.generated_fields = []
+
+        def append(source, value):
+            getattr(source, self.attribute_name).append(value)
+
+        self.append = append
+
+        def remove(source, value):
+            getattr(source, self.attribute_name).remove(value)
+
+        self.remove = remove
+
+        def extend(source, values):
+            getattr(source, self.attribute_name).extend(values)
+
+        self.extend = extend
 
     def __set_name__(self, owner, name):
         if not hasattr(owner, "__declared_relationships__"):

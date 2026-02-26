@@ -21,6 +21,7 @@ from anyblok.common import (
     BaseModelFirstStepList,
     BaseModelSecondStepList,
     anyblok_column_prefix,
+    return_list,
 )
 from anyblok.mapper import ModelAttribute, format_schema
 from anyblok.registry import RegistryManager
@@ -323,6 +324,13 @@ class Model:
         if "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
 
+        if "__depends__" in ns["properties"]:
+            properties["__depends__"] = return_list(
+                ns["properties"]["__depends__"]
+            )
+        else:
+            properties["__depends__"] = []
+
         registry.loaded_namespaces_first_step[namespace] = properties
         return properties
 
@@ -517,6 +525,7 @@ class Model:
             properties = {}
             registry.add_in_registry(namespace, bases[0])
             registry.loaded_namespaces[namespace] = bases[0]
+
             registry.call_plugins(
                 "after_model_construction",
                 bases[0],
@@ -533,6 +542,8 @@ class Model:
 
         :param registry: registry to update
         """
+        from graphlib import CycleError, TopologicalSorter
+
         registry.loaded_namespaces_first_step = {}
         registry.loaded_views = {}
 
@@ -542,8 +553,32 @@ class Model:
 
         # create the namespace with all the information come from first
         # step
+        ts = TopologicalSorter()
         for namespace in registry.loaded_registries["Model_names"]:
-            cls.load_namespace_second_step(registry, namespace)
+            first_step = registry.loaded_namespaces_first_step[namespace]
+            deps = []
+            deps.extend(first_step.get("__depends__", []))
+            for base in first_step.get("__bases__", []):
+                if isinstance(base, str):
+                    if base in registry.loaded_registries["Model_names"]:
+                        deps.append(base)
+
+            ts.add(namespace, *deps)
+
+        try:
+            for namespace in ts.static_order():
+                cls.load_namespace_second_step(registry, namespace)
+        except CycleError as e:
+            raise ModelException("Circular dependency in models: %s" % str(e))
+
+        # Now that all models are assembled, pre-assemble their components
+        # This allows backref discovery to see all models
+        for namespace in registry.loaded_registries["Model_names"]:
+            model = registry.loaded_namespaces[namespace]
+            if hasattr(model, "__registry_get_structure__"):
+                model.__anyblok_assembled_components__ = (
+                    model.__registry_get_structure__()
+                )
 
     @classmethod
     def initialize_callback(cls, registry):

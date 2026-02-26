@@ -92,6 +92,7 @@ class FakeRelationShip:
         self.model_name = model_name
         self.attribute_name = attribute_name
         self.info = {}
+        self.kwargs = {}
 
     def update_description(self, registry, model, res):
         pass
@@ -279,6 +280,11 @@ class ModelAttribute:
         fake = FakeColumn(self.model_name, self.attribute_name)
         Model[self.attribute_name] = fake
         if source:
+            if not hasattr(source, "generated_fields"):
+                print(
+                    "DEBUG: source %r (%s) has no generated_fields"
+                    % (source, type(source))
+                )
             source.generated_fields.append(fake)
 
     def add_fake_relationship(
@@ -292,6 +298,11 @@ class ModelAttribute:
         )
         Model[self.attribute_name] = fake
         if source:
+            if not hasattr(source, "generated_fields"):
+                print(
+                    "DEBUG: source %r (%s) has no generated_fields"
+                    % (source, type(source))
+                )
             source.generated_fields.append(fake)
 
     def get_column_name(self, registry):
