@@ -307,29 +307,44 @@ class Model:
         bases = BaseModelFirstStepList(cls, registry, properties)
         db_schema = format_schema(None, namespace)
 
+        final_structure = {
+            "columns": {},
+            "relationships": {},
+            "fields": {},
+            "caches": {},
+            "hybrid_methods": set(),
+            "events": set(),
+            "sqlalchemy_events": set(),
+            "bases": [],
+        }
+
+        def merge_structure(cls_):
+            final_structure['bases'].insert(0, cls_)
+            for key, values in getattr(cls_, '__anyblok_pre_structure__', {}).items():
+                if isinstance(values, dict):
+                    final_structure[key].update(values)
+                elif isinstance(values, set):
+                    final_structure[key] |= values
+
+        def merge_inerited_structure(cls_):
+            inherited_properties = cls.load_namespace_first_step(registry, cls_.__registry_name__)
+            anyblok_structure = inherited_properties['anyblok_structure']
+            for key, values in anyblok_structure.items():
+                if key == 'bases': 
+                    for b in values[::-1]:
+                        final_structure['bases'].insert(0, b)
+                elif isinstance(values, dict):
+                    final_structure[key].update(values)
+                elif isinstance(values, set):
+                    final_structure[key] |= values
+
         for b in ns["bases"][::-1]:
             for b_ns in b.__anyblok_bases__:
+                merge_inerited_structure(b_ns)
                 bases.insert(0, b_ns.__registry_name__)
 
             # Aggregation from Registry Mixin cache
-            registry_name = getattr(b, "__registry_name__", None)
-            if (
-                registry_name
-                and hasattr(registry, "_anyblok_mixins_structure_cache")
-                and registry_name in registry._anyblok_mixins_structure_cache
-            ):
-                mixin_struct = registry._anyblok_mixins_structure_cache[
-                    registry_name
-                ]
-                for key in ("columns", "relationships", "fields", "caches"):
-                    properties.setdefault(key, {}).update(
-                        deepcopy(mixin_struct.get(key, {}))
-                    )
-                for key in ("hybrid_methods", "events", "sqlalchemy_events"):
-                    properties.setdefault(key, set()).update(
-                        deepcopy(mixin_struct.get(key, set()))
-                    )
-
+            merge_structure(b)
             bases.insert(0, b)
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
@@ -338,8 +353,10 @@ class Model:
             {
                 "__db_schema__": db_schema,
                 "__bases__": bases,
+                "anyblok_structure": final_structure,
             }
         )
+
         if "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
 
@@ -709,9 +726,5 @@ class Model:
         bloks = Blok.list_by_state("touninstall")
         Blok.uninstall_all(*bloks)
         res = Blok.apply_state(*registry.ordered_loaded_bloks)
-
-        # Clear the temporary Mixin structure cache
-        if hasattr(registry, "_anyblok_mixins_structure_cache"):
-            registry._anyblok_mixins_structure_cache = {}
 
         return res

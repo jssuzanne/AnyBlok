@@ -5,7 +5,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public License,
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
-from copy import deepcopy
 from anyblok import Declarations
 from anyblok.registry import RegistryManager
 
@@ -44,10 +43,7 @@ class MixinType:
         RegistryManager.remove_in_register(cls_)
 
 
-@Declarations.add_declaration_type(
-    isAnEntry=True,
-    assemble="assemble_callback",
-)
+@Declarations.add_declaration_type(isAnEntry=True)
 class Mixin(MixinType):
     """The Mixin class are used to define a behaviours on models:
 
@@ -65,20 +61,3 @@ class Mixin(MixinType):
     autodoc_anyblok_bases = True
 
     autodoc_anyblok_fields = True
-
-    @classmethod
-    def assemble_callback(cls, registry):
-        """Capture Mixin structure in the registry cache during assembly.
-        This is used later by the Model first step assembly to aggregate
-        structures while avoiding class-level mutations.
-        """
-        if not hasattr(registry, "_anyblok_mixins_structure_cache"):
-            registry._anyblok_mixins_structure_cache = {}
-
-        for mixin_name in registry.loaded_registries["Mixin_names"]:
-            mixin_cls = registry.loaded_registries[mixin_name]
-            pre = getattr(mixin_cls, "__anyblok_pre_structure__", None)
-            if pre:
-                registry._anyblok_mixins_structure_cache[mixin_name] = deepcopy(
-                    pre
-                )

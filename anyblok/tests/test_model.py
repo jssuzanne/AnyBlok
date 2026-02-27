@@ -23,7 +23,6 @@ from .conftest import init_registry, reset_db
 register = Declarations.register
 unregister = Declarations.unregister
 Model = Declarations.Model
-Mixin = Declarations.Mixin
 
 
 class OneModel:
