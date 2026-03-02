@@ -37,6 +37,7 @@ from sqlalchemy_utils.types.uuid import UUIDType
 from anyblok.config import Configuration
 
 from .common import sgdb_in
+from .declarations import Declarations
 from .field import Field, FieldException
 from .mapper import ModelAttribute, ModelAttributeAdapter
 
@@ -192,19 +193,8 @@ class Column(Field):
     }
 
     def __set_name__(self, owner, name):
-        if not hasattr(owner, "__declared_columns__"):
-            owner.__declared_columns__ = {}
-
-        owner.__declared_columns__[name] = self
-
-        from .declarations import Declarations
-
         Declarations.init_pre_structure(owner)
-        if (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        ):
-            owner.__anyblok_pre_structure__["columns"][name] = self
+        owner.__anyblok_pre_structure__["columns"][name] = self
 
     def __init__(self, *args, **kwargs):
         """Initialize the column

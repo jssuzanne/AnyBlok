@@ -21,63 +21,26 @@ class EventPlugin(ModelPluginBase):
 
         super(EventPlugin, self).__init__(registry)
 
-    def transform_base(
-        self,
-        namespace,
-        base,
-        transformation_properties,
-    ):
-        if hasattr(base, "__declared_events__"):
+    def before_model_construction(self, properties):
+        if properties['__anyblok_structure__']["events"]:
             events = self.registry.events
-            for mapper, attr in base.__declared_events__:
+            for mapper, attr in properties['__anyblok_structure__']["events"]:
                 model = mapper.model.model_name
                 event = mapper.event
 
                 ev1 = events.setdefault(model, {})
                 ev2 = ev1.setdefault(event, [])
 
-                val = (namespace, attr)
-                if val not in ev2:
-                    ev2.append(val)
-
-    def before_model_construction(
-        self, namespace, tablename, properties, transformation_properties
-    ):
-        if properties['anyblok_structure']["events"]:
-            events = self.registry.events
-            for mapper, attr in properties['anyblok_structure']["events"]:
-                model = mapper.model.model_name
-                event = mapper.event
-
-                ev1 = events.setdefault(model, {})
-                ev2 = ev1.setdefault(event, [])
-
-                val = (namespace, attr)
+                val = (properties['__registry_name__'], attr)
                 if val not in ev2:
                     ev2.append(val)
 
 
 class SQLAlchemyEventPlugin(ModelPluginBase):
-    def transform_base(
-        self,
-        namespace,
-        base,
-        transformation_properties,
-    ):
-        if hasattr(base, "__declared_sqlalchemy_events__"):
-            for mapper, attr in base.__declared_sqlalchemy_events__:
-                self.registry._sqlalchemy_known_events.append(
-                    (
-                        mapper,
-                        namespace,
-                        ModelAttribute(namespace, attr),
-                    )
-                )
 
-    def before_model_construction(
-        self, namespace, tablename, properties, transformation_properties
-    ):
-        for mapper, attr in properties['anyblok_structure']["sqlalchemy_events"]:
+    def before_model_construction(self, properties):
+        namespace = properties['__registry_name__']
+        for mapper, attr in properties['__anyblok_structure__']["sqlalchemy_events"]:
             self.registry._sqlalchemy_known_events.append(
                 (
                     mapper,
@@ -88,9 +51,7 @@ class SQLAlchemyEventPlugin(ModelPluginBase):
 
 
 class AutoSQLAlchemyORMEventPlugin(ModelPluginBase):
-    def after_model_construction(
-        self, base, namespace, transformation_properties
-    ):
+    def after_model_construction(self, base):
         for eventtype in (
             "before_insert",
             "after_insert",
@@ -109,7 +70,7 @@ class AutoSQLAlchemyORMEventPlugin(ModelPluginBase):
                 self.registry._sqlalchemy_known_events.append(
                     (
                         ModelMapper(base, eventtype),
-                        namespace,
-                        ModelAttribute(namespace, attr),
+                        base.__registry_name__,
+                        ModelAttribute(base.__registry_name__, attr),
                     )
                 )

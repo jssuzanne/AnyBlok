@@ -227,9 +227,9 @@ class TestMany2ManyComplete:
 
     def test_many2many_autodoc(self, registry_many2many):
         registry = registry_many2many
-        registry.loaded_namespaces_first_step["Model.Person"]["relationships"][
-            "addresses"
-        ].autodoc_get_properties()
+        registry.loaded_namespaces_first_step["Model.Person"][
+            "__anyblok_structure__"]["relationships"
+        ]["addresses"].autodoc_get_properties()
 
     def test_complete_many2many_expire_field(self, registry_many2many):
         registry = registry_many2many

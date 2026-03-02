@@ -14,7 +14,7 @@ import pytest
 from anyblok import Declarations
 from anyblok.column import Integer, String
 from anyblok.environment import EnvironmentManager
-from anyblok.model import ModelException, has_sql_fields, has_sqlalchemy_fields
+from anyblok.model import ModelException, has_sqlalchemy_fields
 from anyblok.registry import RegistryManager
 from anyblok.tests.testcase import LogCapture
 
@@ -448,18 +448,6 @@ class TestModel2:
 
 
 class TestModelAssembling:
-    def test_has_sql_fields_ok(self):
-        class MyModel:
-            one_field = String()
-
-        assert has_sql_fields([MyModel]) is True
-
-    def test_has_sql_fields_ko(self):
-        class MyModel:
-            one_field = None
-
-        assert has_sql_fields([MyModel]) is False
-
     def test_has_sqlalchemy_fields(self):
         from sqlalchemy import Column as SaC
         from sqlalchemy import String as SaS

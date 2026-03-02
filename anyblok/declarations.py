@@ -211,17 +211,8 @@ class Cache:
         return MethodType(self.__func__, obj)
 
     def __set_name__(self, owner, name):
-        if not hasattr(owner, "__declared_caches__"):
-            owner.__declared_caches__ = {}
-
-        owner.__declared_caches__[name] = self
-
         Declarations.init_pre_structure(owner)
-        if (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        ):
-            owner.__anyblok_pre_structure__["caches"][name] = self
+        owner.__anyblok_pre_structure__["caches"][name] = self
 
 
 def cache(size=128):
@@ -263,17 +254,8 @@ class HybridMethod:
         return MethodType(self.__func__, obj)
 
     def __set_name__(self, owner, name):
-        if not hasattr(owner, "__declared_hybrid_method__"):
-            owner.__declared_hybrid_method__ = set()
-
-        owner.__declared_hybrid_method__.add(name)
-
         Declarations.init_pre_structure(owner)
-        if (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        ):
-            owner.__anyblok_pre_structure__["hybrid_methods"].add(name)
+        owner.__anyblok_pre_structure__["hybrid_methods"].add(name)
 
 
 def hybrid_method(func=None):
@@ -315,27 +297,13 @@ class Listen:
 
     def __set_name__(self, owner, name):
         Declarations.init_pre_structure(owner)
-        in_pre_structure = (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        )
         if (
             isinstance(self.mapper, ModelMapper)
             and self.mapper.event not in self.sqlalchemy_known_events
         ):
-            if not hasattr(owner, "__declared_events__"):
-                owner.__declared_events__ = set()
-
-            owner.__declared_events__.add((self.mapper, name))
-            if in_pre_structure:
-                owner.__anyblok_pre_structure__["events"].add((self.mapper, name))
+            owner.__anyblok_pre_structure__["events"].add((self.mapper, name))
         else:
-            if not hasattr(owner, "__declared_sqlalchemy_events__"):
-                owner.__declared_sqlalchemy_events__ = set()
-
-            owner.__declared_sqlalchemy_events__.add((self.mapper, name))
-            if in_pre_structure:
-                owner.__anyblok_pre_structure__["sqlalchemy_events"].add((self.mapper, name))
+            owner.__anyblok_pre_structure__["sqlalchemy_events"].add((self.mapper, name))
 
 
 def listen(*args, **kwargs):

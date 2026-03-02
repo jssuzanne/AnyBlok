@@ -25,37 +25,20 @@ class ModelPluginBase:
     def __init__(self, registry):
         self.registry = registry
 
-    # def initialisation_tranformation_properties(self, properties,
-    #                                             transformation_properties):
+    # def init(self, properties):
     #     """ Initialise the transform properties
 
     #     :param properties: the properties declared in the model
-    #     :param new_type_properties: param to add in a new base if need
     #     """
 
-    # def transform_base(self, namespace, base, transformation_properties)
-    #     """ transform the base for the final Model
+    # def before_model_construction(self, properties):
+    #     """Do some action before the construction of the Model
 
-    #     :param namespace: the namespace of the model
-    #     :param base: One of the base of the model
-    #     :param transformation_properties: the properties of the model
+    #     :param properties: the properties of the model
     #     """
 
-    # def insert_in_bases(self, new_base, namespace, properties,
-    #                     transformation_properties):
-    #     """Insert in a base the overload
-
-    #     :param new_base: the base to be put on front of all bases
-    #     :param namespace: the namespace of the model
-    #     :param properties: the properties declared in the model
-    #     :param transformation_properties: the properties of the model
-    #     """
-
-    # def after_model_construction(self, base, namespace,
-    #                              transformation_properties):
+    # def after_model_construction(self, base)
     #     """Do some action with the constructed Model
 
     #     :param base: the Model class
-    #     :param namespace: the namespace of the model
-    #     :param transformation_properties: the properties of the model
     #     """

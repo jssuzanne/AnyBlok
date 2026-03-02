@@ -131,7 +131,7 @@ class TestCoreSqlBase:
             }
         }
         assert Blok.fields_description(fields=["short_description"]) == res
-        Blok.__declared_fields__["short_description"].label = "Test"
+        Blok.__anyblok_structure__["fields"]["short_description"].info['label'] = "Test"
         assert Blok.fields_description(fields=["short_description"]) == res
         Blok.clear_all_model_caches()
         assert Blok.fields_description(fields=["short_description"]) != res

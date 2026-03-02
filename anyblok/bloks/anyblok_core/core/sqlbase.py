@@ -44,7 +44,6 @@ def format_cols(cols):
 
 class SqlMixin:
     __db_schema__ = None
-    __anyblok_assembled_components__ = None
 
     def __repr__(self):
         state = inspect(self)
@@ -97,8 +96,7 @@ class SqlMixin:
     @classmethod
     def clear_all_model_caches(cls):
         super().clear_all_model_caches()
-        cls.__anyblok_assembled_components__ = None
-        for cache in cls.anyblok_structure['caches']:
+        for cache in cls.__anyblok_structure__['caches']:
             cls.anyblok.System.Cache.invalidate(cls, cache)
 
     @classmethod
@@ -238,6 +236,7 @@ class SqlMixin:
             remote_rel_name = rel.mapper.attribute_name
             remote_rel = (
                 registry.loaded_namespaces_first_step.get(remote_model_name, {})
+                .get("__anyblok_structure__", {})
                 .get("relationships", {})
                 .get(remote_rel_name)
             )
@@ -320,139 +319,22 @@ class SqlMixin:
     @classmethod
     def _fill_from_local_declarations(cls, structure):
         """Add what is in first_step columns/relationships."""
-        first_step = cls.anyblok.loaded_namespaces_first_step.get(
-            cls.__registry_name__, {}
-        )
-        print(
-            "DEBUG: %s local columns: %s"
-            % (
-                cls.__registry_name__,
-                list(first_step.get("columns", {}).keys()),
-            )
-        )
-        print(
-            "DEBUG: %s local relationships: %s"
-            % (
-                cls.__registry_name__,
-                list(first_step.get("relationships", {}).keys()),
-            )
-        )
-        for name, field in first_step.get("fields", {}).items():
+        first_step = cls.anyblok.loaded_namespaces_first_step[
+            cls.__registry_name__]['__anyblok_structure__']
+        for name, field in first_step["fields"].items():
             structure["fields"][name] = cls._enrich_field(name, field)
 
-        for name, col in first_step.get("columns", {}).items():
+        for name, col in first_step["columns"].items():
             structure["columns"][name] = cls._enrich_field(name, col)
 
-        for name, rel in first_step.get("relationships", {}).items():
+        for name, rel in first_step["relationships"].items():
             structure["relationships"][name] = cls._enrich_rel(name, rel)
-
-    @classmethod
-    def _fill_from_backrefs(cls, structure):
-        """Scan all models for inverse relationships and generated fields."""
-        for model in cls.anyblok.get_all_models():
-            for rel_name, rel in getattr(
-                model, "__declared_relationships__", {}
-            ).items():
-                # Check manually defined backrefs
-                backref_name = rel.kwargs.get("backref")
-                if not backref_name:
-                    if rel.__class__.__name__ == "Many2Many":
-                        backref_name = rel.kwargs.get("many2many")
-                    elif rel.__class__.__name__ in ("One2Many", "One2One"):
-                        backref_name = rel.kwargs.get("many2one")
-
-                if backref_name:
-                    if isinstance(backref_name, (list, tuple)):
-                        backref_name = backref_name[0]
-
-                    target_model = rel.model
-                    if hasattr(target_model, "model_name"):
-                        target_model = target_model.model_name
-
-                    if target_model == cls.__registry_name__:
-                        if backref_name not in structure["relationships"]:
-                            ftype = rel.__class__.__name__
-                            if ftype == "Many2One":
-                                ftype = "One2Many"
-                            elif ftype == "One2Many":
-                                ftype = "Many2One"
-                            elif ftype == "One2One":
-                                ftype = "One2One"
-                            elif ftype == "Many2Many":
-                                ftype = "Many2Many"
-
-                            info = rel.info
-                            structure["relationships"][backref_name] = {
-                                "id": backref_name,
-                                "label": backref_name.replace(
-                                    "_", " "
-                                ).capitalize(),
-                                "type": ftype,
-                                "nullable": True,
-                                "model": model.__registry_name__,
-                                "local_columns": format_cols(
-                                    info.get("remote_columns", [])
-                                ),
-                                "remote_columns": format_cols(
-                                    info.get("local_columns", [])
-                                ),
-                                "remote_name": rel_name,
-                            }
-
-                # Check dynamically generated fields (e.g. intermediate FakeRelationShip)
-                generated = getattr(rel, "generated_fields", [])
-                if isinstance(generated, list):
-                    for component in generated:
-                        if (
-                            getattr(component, "model_name", None)
-                            == cls.__registry_name__
-                        ):
-                            from anyblok.mapper import (
-                                FakeColumn,
-                                FakeRelationShip,
-                            )
-
-                            name = getattr(component, "attribute_name", None)
-                            if not name:
-                                continue
-                            if (
-                                component.__class__.__name__ == "FakeColumn"
-                                or isinstance(component, FakeColumn)
-                            ):
-                                if name not in structure["columns"]:
-                                    structure["columns"][
-                                        name
-                                    ] = cls._enrich_field(name, component)
-                            elif (
-                                component.__class__.__name__
-                                == "FakeRelationShip"
-                                or isinstance(component, FakeRelationShip)
-                            ):
-                                if name not in structure["relationships"]:
-                                    structure["relationships"][
-                                        name
-                                    ] = cls._enrich_rel(name, component)
-                                elif (
-                                    isinstance(
-                                        structure["relationships"][name], dict
-                                    )
-                                    and structure["relationships"][name].get(
-                                        "type"
-                                    )
-                                    == "FakeRelationShip"
-                                ):
-                                    structure["relationships"][name].update(
-                                        cls._enrich_rel(name, component)
-                                    )
 
     @ClassMethodCache()
     def __registry_get_structure__(cls):
         """Universal source of truth for model structure.
         Declaration-driven and optimized via injection-at-construction.
         """
-        if cls.__anyblok_assembled_components__ is not None:
-            return cls.__anyblok_assembled_components__
-
         cls._anyblok_introspection_lock = True
         try:
             res = {
@@ -466,7 +348,6 @@ class SqlMixin:
 
             cls._fill_from_depends(res)
             cls._fill_from_local_declarations(res)
-            cls._fill_from_backrefs(res)
 
             return res
         finally:
@@ -872,13 +753,9 @@ class SqlBase(SqlMixin):
         the mappers definition
         """
         for field_name, rfields in mappers.items():
-            fields = getattr(self, field_name)
-            if not isinstance(fields, list):
-                fields = [fields]
-
-            for field in fields:
-                if field is not None:
-                    field.expire(*rfields)
+            field = getattr(self, field_name)
+            if field is not None:
+                field.expire(*rfields)
 
     def refresh(self, *fields, with_for_update=None):
         """Expire and reload all the attribute of the instance
@@ -940,7 +817,7 @@ class SqlBase(SqlMixin):
         else:
             model = self.anyblok.loaded_namespaces_first_step[
                 self.__registry_name__
-            ]
+            ]["__anyblok_structure__"]
             fields = []
             fields.extend(x for x in model["columns"])
             fields.extend(x for x in model["relationships"])

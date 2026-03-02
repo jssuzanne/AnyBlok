@@ -10,6 +10,8 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from anyblok.common import anyblok_column_prefix
 from anyblok.mapper import ModelRepr
 
+from .declarations import Declarations
+
 
 class FieldException(Exception):
     """Simple Exception for Field"""
@@ -63,19 +65,8 @@ class Field:
         self.kwargs = kwargs
 
     def __set_name__(self, owner, name):
-        if not hasattr(owner, "__declared_fields__"):
-            owner.__declared_fields__ = {}
-
-        owner.__declared_fields__[name] = self
-
-        from .declarations import Declarations
-
         Declarations.init_pre_structure(owner)
-        if (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        ):
-            owner.__anyblok_pre_structure__["fields"][name] = self
+        owner.__anyblok_pre_structure__["fields"][name] = self
 
     def forbid_instance(self, cls):
         """Raise an exception if the cls is an instance of this __class__

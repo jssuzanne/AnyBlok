@@ -27,6 +27,7 @@ from sqlalchemy_utils.functions import get_class_by_table
 
 from anyblok.common import anyblok_column_prefix
 
+from .declarations import Declarations
 from .field import Field, FieldException
 from .mapper import ModelAdapter, ModelAttribute, ModelRepr, format_schema
 
@@ -262,18 +263,8 @@ class RelationShip(Field):
         self.extend = extend
 
     def __set_name__(self, owner, name):
-        if not hasattr(owner, "__declared_relationships__"):
-            owner.__declared_relationships__ = {}
-
-        owner.__declared_relationships__[name] = self
-        from .declarations import Declarations
-
         Declarations.init_pre_structure(owner)
-        if (
-            hasattr(owner, "__anyblok_pre_structure__")
-            and "__anyblok_pre_structure__" in owner.__dict__
-        ):
-            owner.__anyblok_pre_structure__["relationships"][name] = self
+        owner.__anyblok_pre_structure__["relationships"][name] = self
 
     def autodoc_get_properties(self):
         res = super(RelationShip, self).autodoc_get_properties()
@@ -986,7 +977,7 @@ class Many2Many(RelationShip):
             m2m_columns_ = []
             first_step = registry.loaded_namespaces_first_step[
                 self.join_model.model_name
-            ]["relationships"]
+            ]["__anyblok_structure__"]["relationships"]
             for col in m2m_columns:
                 if col not in first_step:
                     m2m_columns_.append(col)  # pragma: no cover
@@ -1129,8 +1120,7 @@ class Many2Many(RelationShip):
     def get_back_populate_relationship(self, registry, join_table):
         remote_model = self.model.model_name
         lnfs = registry.loaded_namespaces_first_step[remote_model][
-            "relationships"
-        ]
+            '__anyblok_structure__']["relationships"]
         for fieldname in lnfs:
             field = lnfs[fieldname]
             if not isinstance(field, Many2Many):
@@ -1151,7 +1141,7 @@ class Many2Many(RelationShip):
 
         lnfs = registry.loaded_namespaces_first_step[
             self.join_model.model_name
-        ]["relationships"]
+        ]["__anyblok_structure__"]["relationships"]
         fieldnames = []
         for fieldname in lnfs:
             field = lnfs[fieldname]
@@ -1434,8 +1424,7 @@ class One2Many(RelationShip):
     def get_back_populate_relationship(self, registry, namespace):
         remote_model = self.model.model_name
         lnfs = registry.loaded_namespaces_first_step[remote_model][
-            "relationships"
-        ]
+            "__anyblok_structure__"]["relationships"]
         fieldnames = []
         for fieldname in lnfs:
             field = lnfs[fieldname]

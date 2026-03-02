@@ -833,10 +833,6 @@ class Registry:
                 self.removed.append(removed)
 
     def load_bloks(self, bloks, toinstall, toload, required=True):
-        print(
-            "DEBUG: load_bloks(bloks=%r, toinstall=%r, toload=%r, required=%r)"
-            % (bloks, toinstall, toload, required)
-        )
         for blok in bloks:
             if required:
                 if not self.load_blok(blok, toinstall, toload):
@@ -852,7 +848,6 @@ class Registry:
         :param blok:name of the blok
         :exception:RegistryManagerException
         """
-        print("DEBUG: load_blok(%r)" % blok)
         if blok in self.ordered_loaded_bloks:
             return True
 

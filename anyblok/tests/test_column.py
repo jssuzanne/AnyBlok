@@ -643,9 +643,8 @@ class TestColumns:
         registry = self.init_registry(
             simple_column, ColumnType=dt_column_type, default_timezone=timezone
         )
-        field = registry.loaded_namespaces_first_step["Model.Test"]["columns"][
-            "col"
-        ]
+        field = registry.loaded_namespaces_first_step["Model.Test"][
+            "__anyblok_structure__"]["columns"]["col"]
         assert field.default_timezone is timezone
 
         test = registry.Test.insert(col=now)
@@ -663,9 +662,8 @@ class TestColumns:
             ColumnType=dt_column_type,
             default_timezone="Asia/Tokyo",
         )
-        field = registry.loaded_namespaces_first_step["Model.Test"]["columns"][
-            "col"
-        ]
+        field = registry.loaded_namespaces_first_step["Model.Test"][
+            "__anyblok_structure__"]["columns"]["col"]
         assert field.default_timezone == timezone
 
         test = registry.Test.insert(col=now)
@@ -683,9 +681,8 @@ class TestColumns:
                 simple_column, ColumnType=dt_column_type
             )
 
-        field = registry.loaded_namespaces_first_step["Model.Test"]["columns"][
-            "col"
-        ]
+        field = registry.loaded_namespaces_first_step["Model.Test"][
+            "__anyblok_structure__"]["columns"]["col"]
         assert field.default_timezone is timezone
 
         test = registry.Test.insert(col=now)

@@ -17,27 +17,10 @@ class CachePlugin(ModelPluginBase):
 
         super(CachePlugin, self).__init__(registry)
 
-    def initialisation_tranformation_properties(
-        self, properties, transformation_properties
-    ):
-        if "caches" not in transformation_properties:
-            transformation_properties.update({"caches": {}})
-
-    def transform_base(self, namespace, base, transformation_properties):
-        if hasattr(base, "__declared_caches__"):
-            transformation_properties["caches"].update(base.__declared_caches__)
-
-    def _before_model_construction(
-        self, namespace, first_step, properties, transformation_properties
-    ):
-        for name, cache in transformation_properties["caches"].items():
-            properties[name] = self.add_cache_method(namespace, name, cache)
-
-    def before_model_construction(
-        self, namespace, tablename, properties, transformation_properties
-    ):
-        for name, cache in properties['anyblok_structure']["caches"].items():
-            properties[name] = self.add_cache_method(namespace, name, cache)
+    def before_model_construction(self, properties):
+        for name, cache in properties['__anyblok_structure__']["caches"].items():
+            properties[name] = self.add_cache_method(
+                properties['__registry_name__'], name, cache)
 
     def add_cache_method(self, namespace, name, cache):
         cache_ = self.registry.caches.setdefault(namespace, {})

@@ -73,7 +73,13 @@ class MapperException(AttributeError):
     """Simple Exception for Mapper"""
 
 
-class FakeColumn:
+class FakeField:
+
+    def update_description(self, registry, model, res):
+        pass
+
+
+class FakeColumn(FakeField):
     db_column_name = None
 
     def __init__(self, model_name=None, attribute_name=None):
@@ -82,20 +88,14 @@ class FakeColumn:
         self.info = {}
         self.kwargs = {}
 
-    def update_description(self, registry, model, res):
-        pass
 
-
-class FakeRelationShip:
+class FakeRelationShip(FakeField):
     def __init__(self, mapper, model_name=None, attribute_name=None):
         self.mapper = mapper
         self.model_name = model_name
         self.attribute_name = attribute_name
         self.info = {}
         self.kwargs = {}
-
-    def update_description(self, registry, model, res):
-        pass
 
 
 class ModelAttribute:
@@ -158,7 +158,7 @@ class ModelAttribute:
         :param registry: instance of the sqlalchemy ForeignKey
         :rtype: instance of the attribute
         """
-        Model = self.check_model_in_first_step(registry)
+        Model = self.check_model_in_first_step(registry)["__anyblok_structure__"]
         alls = {}
         alls.update(Model["fields"])
         alls.update(Model["columns"])
@@ -193,8 +193,9 @@ class ModelAttribute:
         Model = self.check_model_in_first_step(registry)
         try:
             column_name = self.check_column_in_first_step(registry, Model)
-            if Model["columns"][column_name].foreign_key:
-                return Model["columns"][column_name].foreign_key
+            Col = Model["__anyblok_structure__"]["columns"][column_name]
+            if Col.foreign_key:
+                return Col.foreign_key
         except ModelAttributeException:
             pass
 
@@ -231,8 +232,9 @@ class ModelAttribute:
         Model = self.check_model_in_first_step(registry)
         column_name = self.check_column_in_first_step(registry, Model)
         tablename = Model["__tablename__"]
-        if Model["columns"][self.attribute_name].db_column_name:
-            column_name = Model["columns"][self.attribute_name].db_column_name
+        Col = Model["__anyblok_structure__"]["columns"][self.attribute_name]
+        if Col.db_column_name:
+            column_name = Col.db_column_name
 
         if with_schema and Model.get("__db_schema__"):
             return "%s.%s.%s" % (Model["__db_schema__"], tablename, column_name)
@@ -257,7 +259,7 @@ class ModelAttribute:
     def get_fk_remote(self, registry):
         Model = self.check_model_in_first_step(registry)
         column_name = self.check_column_in_first_step(registry, Model)
-        remote = Model["columns"][column_name].foreign_key
+        remote = Model["__anyblok_structure__"]["columns"][column_name].foreign_key
         if not remote:
             return None
 
@@ -266,31 +268,27 @@ class ModelAttribute:
     def get_complete_remote(self, registry):
         Model = self.check_model_in_first_step(registry)
         column_name = self.check_column_in_first_step(registry, Model)
-        remote = Model["columns"][column_name].foreign_key
+        remote = Model["__anyblok_structure__"]["columns"][column_name].foreign_key
         if not remote:
             return None
 
         return remote.get_complete_name(registry)
 
     def add_fake_column(self, registry, source=None):
-        Model = self.check_model_in_first_step(registry)["columns"]
-        if self.attribute_name in Model:
+        Model = self.check_model_in_first_step(registry)
+        columns = Model["__anyblok_structure__"]["columns"]
+        if self.attribute_name in columns:
             return
 
         fake = FakeColumn(self.model_name, self.attribute_name)
-        Model[self.attribute_name] = fake
+        columns[self.attribute_name] = fake
         if source:
-            if not hasattr(source, "generated_fields"):
-                print(
-                    "DEBUG: source %r (%s) has no generated_fields"
-                    % (source, type(source))
-                )
             source.generated_fields.append(fake)
 
     def add_fake_relationship(
         self, registry, namespace, fieldname, source=None
     ):
-        Model = self.check_model_in_first_step(registry)["relationships"]
+        Model = self.check_model_in_first_step(registry)["__anyblok_structure__"]["relationships"]
         fake = FakeRelationShip(
             ModelAttribute(namespace, fieldname),
             self.model_name,
@@ -298,11 +296,6 @@ class ModelAttribute:
         )
         Model[self.attribute_name] = fake
         if source:
-            if not hasattr(source, "generated_fields"):
-                print(
-                    "DEBUG: source %r (%s) has no generated_fields"
-                    % (source, type(source))
-                )
             source.generated_fields.append(fake)
 
     def get_column_name(self, registry):
@@ -317,11 +310,10 @@ class ModelAttribute:
         """
         Model = self.check_model_in_first_step(registry)
         column_name = self.check_column_in_first_step(registry, Model)
-        if hasattr(Model["columns"][self.attribute_name], "db_column_name"):
-            if Model["columns"][self.attribute_name].db_column_name:
-                column_name = Model["columns"][
-                    self.attribute_name
-                ].db_column_name
+        col = Model["__anyblok_structure__"]["columns"][self.attribute_name]
+        if hasattr(col, "db_column_name"):
+            if col.db_column_name:
+                column_name = col.db_column_name
 
         return column_name
 
@@ -330,7 +322,7 @@ class ModelAttribute:
             raise ModelAttributeException("Unknow model %r" % self.model_name)
 
         Model = registry.loaded_namespaces_first_step[self.model_name]
-        if not Model["columns"]:
+        if not Model["__anyblok_structure__"]["columns"]:
             # No column found, so is not an sql model
             raise ModelAttributeException(
                 "The Model %r is not an SQL Model" % self.model_name
@@ -338,7 +330,7 @@ class ModelAttribute:
         return Model
 
     def check_column_in_first_step(self, registry, Model):
-        if self.attribute_name not in Model["columns"]:
+        if self.attribute_name not in Model["__anyblok_structure__"]["columns"]:
             raise ModelAttributeException(
                 "the Model %r has not got attribute %r"
                 % (self.model_name, self.attribute_name)
@@ -347,7 +339,7 @@ class ModelAttribute:
         return self.attribute_name
 
     def is_declared(self, registry):
-        Model = self.check_model_in_first_step(registry)
+        Model = self.check_model_in_first_step(registry)["__anyblok_structure__"]
         if self.attribute_name in Model["columns"]:
             return True
         if self.attribute_name in Model["relationships"]:
@@ -358,8 +350,8 @@ class ModelAttribute:
     def native_type(self, registry):
         Model = self.check_model_in_first_step(registry)
         alls = {}
-        alls.update(Model["columns"])
-        alls.update(Model["relationships"])
+        alls.update(Model["__anyblok_structure__"]["columns"])
+        alls.update(Model["__anyblok_structure__"]["relationships"])
         if self.attribute_name in alls:
             self.check_column_in_first_step(registry, Model)
 
@@ -423,7 +415,7 @@ class ModelRepr:
         """
         from anyblok.column import Column
 
-        Model = self.check_model(registry)
+        Model = self.check_model(registry)["__anyblok_structure__"]
         pks = []
         for k, v in Model["columns"].items():
             if isinstance(v, Column):
@@ -440,7 +432,7 @@ class ModelRepr:
         """
         from anyblok.column import Column
 
-        Model = self.check_model(registry)
+        Model = self.check_model(registry)["__anyblok_structure__"]
         fks = []
         for k, v in Model["columns"].items():
             if isinstance(v, Column):
@@ -460,7 +452,7 @@ class ModelRepr:
 
         Model = self.check_model(registry)
         many2ones = []
-        for k, v in Model["relationships"].items():
+        for k, v in Model["__anyblok_structure__"]["relationships"].items():
             if isinstance(v, Many2One):
                 if v.model.model_name == remote_model:
                     many2ones.append((k, v))

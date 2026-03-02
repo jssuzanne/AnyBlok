@@ -14,23 +14,22 @@ from .plugins import ModelPluginBase
 
 
 class AutoUpdatePlugin(ModelPluginBase):
-    def after_model_construction(
-        self, base, namespace, transformation_properties
-    ):
+    def after_model_construction(self, base, namespace=None):
         """Add the sqlalchemy event
 
         :param base: the Model class
-        :param namespace: the namespace of the model
-        :param transformation_properties: the properties of the model
         """
+        if namespace is None:
+            namespace = base.__registry_name__
+
         for b in getattr(base, '__anyblok_bases__', []):
             b_ns = b.__registry_name__
             if b_ns.startswith('Model.'):
-                self.after_model_construction(self.registry.get(b.__registry_name__), namespace, transformation_properties)
+                self.after_model_construction(self.registry.get(b.__registry_name__), namespace=namespace)
 
         fields = [
             c
-            for c, f in base.anyblok_structure["columns"].items()
+            for c, f in base.__anyblok_structure__["columns"].items()
             if isinstance(f, DateTime) and f.auto_update
         ]
 

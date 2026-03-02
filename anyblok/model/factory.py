@@ -14,19 +14,6 @@ from anyblok.common import anyblok_column_prefix, merge_structure
 from .exceptions import ModelFactoryException, ViewException
 
 
-def has_sql_fields(bases):
-    """Tells whether the model as field or not
-
-    :param bases: list of Model's Class
-    :rtype: boolean
-    """
-    for base in bases:
-        if base.__dict__.get("__declared_columns__", []):
-            return True
-
-    return False
-
-
 class BaseFactory:
     def __init__(self, registry):
         self.registry = registry
@@ -34,10 +21,7 @@ class BaseFactory:
     def get_structure(self, from_structure):
         raise ModelFactoryException("Must be overwritten")  # pragma: no cover
 
-    def insert_core_bases(self, bases, properties):
-        raise ModelFactoryException("Must be overwritten")  # pragma: no cover
-
-    def build_model(self, modelname, bases, properties):
+    def build_model(self, modelname, properties):
         raise ModelFactoryException("Must be overwritten")  # pragma: no cover
 
 
@@ -51,7 +35,6 @@ class ModelFactory(BaseFactory):
             merge_structure(structure, b.__anyblok_pre_structure__)
             structure['bases'].insert(0, b)
 
-        print(from_structure['has_any_field'])
         if from_structure.get("has_any_field", False) is True:
             structure['bases'].insert(0, self.registry.declarativebase)
             for b in self.registry.loaded_cores['SqlBase'][::-1]:
@@ -63,16 +46,6 @@ class ModelFactory(BaseFactory):
         merge_structure(structure, from_structure)
         return structure
 
-    def insert_core_bases(self, bases, properties):
-        if has_sql_fields(bases):
-            bases.extend([x for x in self.registry.loaded_cores["SqlBase"]])
-            bases.append(self.registry.declarativebase)
-        else:
-            # remove tablename to inherit from a sqlmodel
-            del properties["__tablename__"]
-
-        bases.extend([x for x in self.registry.loaded_cores["Base"]])
-
     def build_model(self, modelname, properties):
         if properties.get("ignore_migration") is True:
             self.registry.ignore_migration_for[  # pragma: no cover
@@ -81,17 +54,9 @@ class ModelFactory(BaseFactory):
 
         return type(
             modelname,
-            tuple(properties['anyblok_structure']['bases']),
+            tuple(properties['__anyblok_structure__']['bases']),
             properties
         )
-
-    def _build_model(self, modelname, bases, properties):
-        if properties.get("ignore_migration") is True:
-            self.registry.ignore_migration_for[  # pragma: no cover
-                properties["__tablename__"]
-            ] = True
-
-        return type(modelname, tuple(bases), properties)
 
 
 def get_columns(view, columns):
@@ -105,23 +70,15 @@ def get_columns(view, columns):
 
 
 class ViewFactory(BaseFactory):
-    def insert_core_bases(self, bases, properties):
-        bases.extend([x for x in self.registry.loaded_cores["SqlViewBase"]])
-        bases.extend([x for x in self.registry.loaded_cores["Base"]])
 
     def get_structure(self, from_structure):
         structure = {'bases': []}
-        for b in self.registry.loaded_cores['Base'][::-1]:
-            if b in self.registry.removed:
-                continue
-            merge_structure(structure, b.__anyblok_pre_structure__)
-            structure['bases'].insert(0, b)
-
-        for b in self.registry.loaded_cores['SqlViewBase'][::-1]:
-            if b in self.registry.removed:
-                continue
-            merge_structure(structure, b.__anyblok_pre_structure__)
-            structure['bases'].insert(0, b)
+        for core in ('Base', 'SqlViewBase'):
+            for b in self.registry.loaded_cores[core][::-1]:
+                if b in self.registry.removed:
+                    continue
+                merge_structure(structure, b.__anyblok_pre_structure__)
+                structure['bases'].insert(0, b)
 
         merge_structure(structure, from_structure)
         return structure
@@ -131,7 +88,7 @@ class ViewFactory(BaseFactory):
         Model = type(
             modelname, 
             # tuple(bases), 
-            tuple(properties['anyblok_structure']['bases']),
+            tuple(properties['__anyblok_structure__']['bases']),
             properties,
         )
         self.apply_view(Model, properties)
