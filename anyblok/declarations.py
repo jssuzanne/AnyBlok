@@ -7,7 +7,7 @@
 # obtain one at http://mozilla.org/MPL/2.0/.
 from warnings import warn
 
-from .common import add_autodocs
+from .common import add_autodocs, merge_structure
 from .mapper import MapperAdapter, ModelMapper
 
 
@@ -42,31 +42,20 @@ class Declarations:
                 "hybrid_methods": set(),
                 "events": set(),
                 "sqlalchemy_events": set(),
-                "partial": getattr(owner, "__registry_name__", "") == "Model.Mixin"
+                "partial": getattr(owner, "__registry_name__", "") == "Model.Mixin",
+                "table_args": hasattr(owner, 'define_table_args'),
+                "table_kwargs": hasattr(owner, 'define_table_kwargs'),
+                "mapper_args": hasattr(owner, 'define_mapper_args'),
+                "has_any_field": False,
             }
-            # from anyblok.column import Column
-            # from anyblok.field import Field
-            # from anyblok.relationship import RelationShip
-            # 
-            # for name, attr in list(owner.__dict__.items()):
-            #     if isinstance(attr, Column):
-            #         owner.__anyblok_pre_structure__["columns"][name] = attr
-            #     elif isinstance(attr, RelationShip):
-            #         owner.__anyblok_pre_structure__["relationships"][name] = attr
-            #     elif isinstance(attr, Field):
-            #         owner.__anyblok_pre_structure__["fields"][name] = attr
-            #     elif isinstance(attr, Cache):
-            #         owner.__anyblok_pre_structure__["caches"][name] = attr
-            #     elif isinstance(attr, HybridMethod):
-            #         owner.__anyblok_pre_structure__["hybrid_methods"].add(name)
-            #     elif isinstance(attr, Listen):
-            #         if (
-            #             isinstance(attr.mapper, ModelMapper)
-            #             and attr.mapper.event not in attr.sqlalchemy_known_events
-            #         ):
-            #             owner.__anyblok_pre_structure__["events"].add((attr.mapper, name))
-            #         else:
-            #             owner.__anyblok_pre_structure__["sqlalchemy_events"].add((attr.mapper, name))
+            for inherit in owner.__mro__[::-1]:
+                if inherit is owner:
+                    continue
+
+                if hasattr(inherit, '__anyblok_pre_structure__'):
+                    merge_structure(
+                        owner.__anyblok_pre_structure__,
+                        inherit.__anyblok_pre_structure__)
 
     @classmethod
     def register(cls, parent, cls_=None, **kwargs):

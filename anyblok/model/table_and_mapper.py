@@ -93,7 +93,7 @@ class TableMapperPlugin(ModelPluginBase):
         if hasattr(base, "define_mapper_args"):
             transformation_properties["mapper_args"] = True
 
-    def before_model_construction(
+    def _before_model_construction(
         self, namespace, first_step, properties, transformation_properties
     ):
         table_args = tuple(properties["add_in_table_args"])
@@ -109,8 +109,34 @@ class TableMapperPlugin(ModelPluginBase):
                     "call_define_table_kwargs"
                 ] = self.define_table_kwargs(namespace)
 
-        self.insert_table_args(properties, transformation_properties)
-        self.insert_mapper_args(properties, transformation_properties)
+        self._insert_table_args(properties, transformation_properties)
+        self._insert_mapper_args(properties, transformation_properties)
+
+    def before_model_construction(
+        self, namespace, tablename, properties, transformation_properties
+    ):
+        table_args = tuple(properties["add_in_table_args"])
+        if table_args:
+            properties["call_define_table_args"] = self.define_table_args(
+                namespace, table_args
+            )
+            properties["table_args"] = True
+        else:
+            properties["call_define_table_args"] = classmethod(
+                call_define_table_args
+            )
+
+        properties["call_define_table_kwargs"] = classmethod(
+            call_define_table_kwargs
+        )
+        if properties["anyblok_structure"]["table_kwargs"] is True:
+            if sgdb_in(self.registry.engine, ["MySQL", "MariaDB"]):
+                properties[
+                    "call_define_table_kwargs"
+                ] = self.define_table_kwargs(namespace)
+
+        self.insert_table_args(properties)
+        self.insert_mapper_args(properties)
 
     def define_table_args(self, namespace, table_args):
         """
@@ -160,7 +186,7 @@ class TableMapperPlugin(ModelPluginBase):
 
         return classmethod(fnct)
 
-    def insert_table_args(self, properties, transformation_properties):
+    def _insert_table_args(self, properties, transformation_properties):
         if (
             transformation_properties["table_args"]
             and transformation_properties["table_kwargs"]
@@ -171,6 +197,21 @@ class TableMapperPlugin(ModelPluginBase):
         elif transformation_properties["table_kwargs"]:  # pragma: no cover
             properties["__table_args__"] = declared_attr(table_kwargs)
 
-    def insert_mapper_args(self, properties, transformation_properties):
+    def insert_table_args(self, properties):
+        if (
+            properties["anyblok_structure"]["table_args"]
+            and properties["anyblok_structure"]["table_kwargs"]
+        ):
+            properties["__table_args__"] = declared_attr(table_args_and_kwargs)
+        elif properties["anyblok_structure"]["table_args"]:
+            properties["__table_args__"] = declared_attr(table_args)
+        elif properties["anyblok_structure"]["table_kwargs"]:  # pragma: no cover
+            properties["__table_args__"] = declared_attr(table_kwargs)
+
+    def _insert_mapper_args(self, properties, transformation_properties):
         if transformation_properties["mapper_args"]:
+            properties["__mapper_args__"] = declared_attr(mapper_args)
+
+    def insert_mapper_args(self, properties):
+        if properties["anyblok_structure"]["mapper_args"]:
             properties["__mapper_args__"] = declared_attr(mapper_args)

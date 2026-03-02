@@ -22,6 +22,7 @@ from anyblok.common import (
     BaseModelSecondStepList,
     anyblok_column_prefix,
     return_list,
+    merge_structure,
 )
 from anyblok.mapper import ModelAttribute, format_schema
 from anyblok.registry import RegistryManager
@@ -208,7 +209,7 @@ class Model:
         RegistryManager.remove_in_register(cls_)
 
     @classmethod
-    def declare_field(
+    def _declare_field(
         cls,
         registry,
         name,
@@ -216,6 +217,17 @@ class Model:
         namespace,
         properties,
         transformation_properties,
+    ):
+        return cls.declare_field(registry, name, field, namespace, properties)
+
+    @classmethod
+    def declare_field(
+        cls,
+        registry,
+        name,
+        field,
+        namespace,
+        properties,
     ):
         """Declare the field/column/relationship to put in the properties
         of the model
@@ -226,8 +238,9 @@ class Model:
         :param namespace: the namespace of the model
         :param properties: the properties of the model
         """
-        if name in properties["loaded_columns"]:
-            return
+        print(" ==> ", namespace, field)
+        # if name in properties["loaded_columns"]:
+        #     return
 
         if field.must_be_copied_before_declaration():
             field = deepcopy(field)
@@ -306,6 +319,8 @@ class Model:
         properties = {}
         bases = BaseModelFirstStepList(cls, registry, properties)
         db_schema = format_schema(None, namespace)
+        Factory = ns["properties"].get("__model_factory__", ModelFactory)
+        model_factory = Factory(registry)
 
         final_structure = {
             "columns": {},
@@ -318,46 +333,53 @@ class Model:
             "bases": [],
         }
 
-        def merge_structure(cls_):
+        def _merge_structure(cls_):
             final_structure['bases'].insert(0, cls_)
-            for key, values in getattr(cls_, '__anyblok_pre_structure__', {}).items():
-                if isinstance(values, dict):
-                    final_structure[key].update(values)
-                elif isinstance(values, set):
-                    final_structure[key] |= values
-
-        def merge_inerited_structure(cls_):
-            inherited_properties = cls.load_namespace_first_step(registry, cls_.__registry_name__)
-            anyblok_structure = inherited_properties['anyblok_structure']
-            for key, values in anyblok_structure.items():
-                if key == 'bases': 
-                    for b in values[::-1]:
-                        final_structure['bases'].insert(0, b)
-                elif isinstance(values, dict):
-                    final_structure[key].update(values)
-                elif isinstance(values, set):
-                    final_structure[key] |= values
+            merge_structure(final_structure, getattr(cls_, '__anyblok_pre_structure__', {}))
 
         for b in ns["bases"][::-1]:
+            if b in registry.removed:
+                continue
+
             for b_ns in b.__anyblok_bases__:
-                merge_inerited_structure(b_ns)
+                inherited_properties = cls.load_namespace_first_step(
+                    registry, b_ns.__registry_name__)
+                anyblok_structure = deepcopy(inherited_properties['anyblok_structure'])
+                if b_ns.__registry_name__.startswith('Model.'):
+                    anyblok_structure['bases'] = [b_ns.__registry_name__]
+                    anyblok_structure['fields'] = {}
+                    anyblok_structure['columns'] = {}
+                    anyblok_structure['relationships'] = {}
+
+                merge_structure(final_structure, anyblok_structure)
                 bases.insert(0, b_ns.__registry_name__)
 
             # Aggregation from Registry Mixin cache
-            merge_structure(b)
+            _merge_structure(b)
             bases.insert(0, b)
             if hasattr(b, "__db_schema__"):
                 db_schema = format_schema(b.__db_schema__, namespace)
 
+        final_structure['has_any_field'] = has_any_field = any(
+            [any(final_structure.get(x, [])) for x in ('fields', 'columns', 'relationships')]
+        )
         properties.update(
             {
                 "__db_schema__": db_schema,
                 "__bases__": bases,
-                "anyblok_structure": final_structure,
+                "__model_factory__": model_factory,
+                "add_in_table_args": [],
+                "loaded_columns": [],
+                "hybrid_property_columns": [],
+                "loaded_fields": {},
+                "anyblok_structure": (
+                    model_factory.get_structure(final_structure)
+                    if namespace.startswith('Model.') else final_structure
+                ),
             }
         )
 
-        if "__tablename__" in ns["properties"]:
+        if has_any_field and "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
 
         if "__depends__" in ns["properties"]:
@@ -371,7 +393,7 @@ class Model:
         return properties
 
     @classmethod
-    def apply_inheritance_base(
+    def _apply_inheritance_base(
         cls,
         registry,
         namespace,
@@ -409,6 +431,69 @@ class Model:
                     properties["__doc__"] = base.__doc__
 
     @classmethod
+    def _apply_inheritance_base(
+        cls,
+        registry,
+        namespace,
+        ns,
+        bases,
+        realregistryname,
+        properties,
+        transformation_properties,
+    ):
+        kwargs = {"namespace": realregistryname} if realregistryname else {}
+        for base in ns["__bases__"][::-1]:
+            if isinstance(base, str):
+                tp = transformation_properties
+                if base in registry.loaded_registries["Mixin_names"]:
+                    bs, _ = cls._load_namespace_second_step(
+                        registry,
+                        base,
+                        realregistryname=realregistryname or namespace,
+                        transformation_properties=tp,
+                    )
+                elif base in registry.loaded_registries["Model_names"]:
+                    bs, _ = cls._load_namespace_second_step(registry, base)
+                else:
+                    raise ModelException(  # pragma: no cover
+                        "You have not to inherit the %r "
+                        "Only the 'Mixin' and %r types are allowed"
+                        % (base, cls.__name__)
+                    )
+                for bs_ in bs[::-1]:
+                    bases.insert(0, bs_)
+            else:
+                bases.insert(0, base, **kwargs)
+                if base.__doc__:
+                    properties["__doc__"] = base.__doc__
+
+
+
+
+    @classmethod
+    def apply_inheritance_base(
+        cls,
+        registry,
+        properties,
+    ):
+        bases = []
+        for base in properties["anyblok_structure"]["bases"][::-1]:
+            if isinstance(base, str):
+                if base in registry.loaded_registries["Model_names"]:
+                    bs = cls.load_namespace_second_step(registry, base)
+                    bases.insert(0, bs)
+                else:
+                    raise ModelException(  # pragma: no cover
+                        "You have not to inherit the %r "
+                        "Only the 'Mixin' and %r types are allowed"
+                        % (base, cls.__name__)
+                    )
+            else:
+                bases.insert(0, base)
+
+        properties['anyblok_structure']['bases'] = bases
+
+    @classmethod
     def init_core_properties_and_bases(cls, registry, bases, properties):
         properties["loaded_columns"] = []
         properties["hybrid_property_columns"] = []
@@ -416,7 +501,7 @@ class Model:
         properties["__model_factory__"].insert_core_bases(bases, properties)
 
     @classmethod
-    def declare_all_fields(
+    def _declare_all_fields(
         cls, registry, namespace, properties, transformation_properties
     ):
         # do in the first time the fields and columns
@@ -430,7 +515,7 @@ class Model:
             "__declared_relationships__",
         ):
             for p, f in transformation_properties[key].items():
-                cls.declare_field(
+                cls._declare_field(
                     registry,
                     p,
                     f,
@@ -440,7 +525,28 @@ class Model:
                 )
 
     @classmethod
-    def apply_existing_table(
+    def declare_all_fields(cls, registry, namespace, properties):
+        # do in the first time the fields and columns
+        # because for the relationship on the same model
+        # the primary keys must exist before the relationship
+        # load all the base before do relationship because primary key
+        # can be come from inherit
+        for key in (
+            "fields",
+            "columns",
+            "relationships",
+        ):
+            for p, f in properties['anyblok_structure'][key].items():
+                cls.declare_field(
+                    registry,
+                    p,
+                    f,
+                    namespace,
+                    properties,
+                )
+
+    @classmethod
+    def _apply_existing_table(
         cls,
         registry,
         namespace,
@@ -471,7 +577,100 @@ class Model:
             )
 
     @classmethod
+    def apply_existing_table(
+        cls,
+        registry,
+        namespace,
+        tablename,
+        properties,
+    ):
+        if "__tablename__" in properties:
+            del properties["__tablename__"]
+
+        for t in registry.loaded_namespaces.keys():
+            m = registry.loaded_namespaces[t]
+            if m.is_sql:
+                if getattr(m, "__tablename__"):
+                    if m.__tablename__ == tablename:
+                        properties["__table__"] = m.__table__
+                        tablename = namespace.replace(".", "_").lower()
+
+        for p, f in properties["anyblok_structure"]["fields"].items():
+            cls.declare_field(
+                registry,
+                p,
+                f,
+                namespace,
+                properties,
+            )
+
+    @classmethod
     def load_namespace_second_step(
+        cls,
+        registry,
+        namespace,
+        realregistryname=None,
+    ):
+        """Return the bases and the properties of the namespace
+
+        :param registry: the current registry
+        :param namespace: the namespace of the model
+        :param realregistryname: the name of the model if the namespace is a
+            mixin
+        :rtype: the list od the bases and the properties
+        :exception: ModelException
+        """
+        if namespace in registry.loaded_namespaces:
+            return registry.loaded_namespaces[namespace]
+
+        first_step = registry.loaded_namespaces_first_step[namespace]
+        transformation_properties = {}
+        tablename = first_step.get("__tablename__")
+        modelname = namespace.replace(".", "")
+        first_step['anyblok_structure']['bases'].append(registry.registry_base)
+        cls.apply_inheritance_base(
+            registry,
+            first_step,
+        )
+
+        if tablename in registry.declarativebase.metadata.tables:
+            cls.apply_existing_table(
+                registry,
+                namespace,
+                tablename,
+                first_step,
+            )
+        else:
+            cls.declare_all_fields(
+                registry,
+                namespace,
+                first_step,
+            )
+
+        registry.call_plugins(
+            "before_model_construction",
+            namespace,
+            tablename,
+            first_step,
+            transformation_properties,
+        )
+        print(' ####> ', namespace, first_step)
+        base = first_step["__model_factory__"].build_model(
+            modelname, first_step
+        )
+
+        registry.add_in_registry(namespace, base)
+        registry.loaded_namespaces[namespace] = base
+
+        registry.call_plugins(
+            "after_model_construction",
+            base,
+            namespace,
+            transformation_properties,
+        )
+
+    @classmethod
+    def _load_namespace_second_step(
         cls,
         registry,
         namespace,
@@ -512,7 +711,7 @@ class Model:
             "__model_factory__", ModelFactory
         )(registry)
 
-        cls.apply_inheritance_base(
+        cls._apply_inheritance_base(
             registry,
             namespace,
             first_step,
@@ -536,7 +735,7 @@ class Model:
                     transformation_properties,
                 )
             else:
-                cls.declare_all_fields(
+                cls._declare_all_fields(
                     registry,
                     namespace,
                     properties,
@@ -546,14 +745,15 @@ class Model:
             bases.append(registry.registry_base)
 
             registry.call_plugins(
-                "before_model_construction",
+                "_before_model_construction",
                 namespace,
                 first_step,
                 properties,
                 transformation_properties,
             )
+            print(' ####> ', namespace, bases, properties)
             bases = [
-                properties["__model_factory__"].build_model(
+                properties["__model_factory__"]._build_model(
                     modelname, bases, properties
                 )
             ]
@@ -563,7 +763,7 @@ class Model:
             registry.loaded_namespaces[namespace] = bases[0]
 
             registry.call_plugins(
-                "after_model_construction",
+                "_after_model_construction",
                 bases[0],
                 namespace,
                 transformation_properties,
@@ -609,95 +809,95 @@ class Model:
 
         # Now that all models are assembled, pre-assemble their components
         # This allows backref discovery to see all models
-        import json
-        import os
-        import pickle
-
-        cache_file = ".anyblok_cache"
-        fingerprint = registry.get_fingerprint()
-
-        # Try to load fingerprint from DB using a raw connection to avoid uninitialized session issues
-        db_fingerprint = None
-        try:
-            from sqlalchemy import text
-
-            with registry.engine.connect() as conn:
-                res = conn.execute(
-                    text(
-                        "SELECT value FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
-                    )
-                ).fetchone()
-                if res and res[0]:
-                    db_fingerprint = json.loads(res[0]).get("value")
-            registry.engine.dispose()
-        except Exception:
-            pass
-
-        cached_data = None
-        if db_fingerprint == fingerprint and os.path.exists(cache_file):
-            try:
-                with open(cache_file, "rb") as f:
-                    cached_data = pickle.load(f)
-            except Exception:
-                pass
-
-        if cached_data is not None:
-            for namespace in registry.loaded_registries["Model_names"]:
-                model = registry.loaded_namespaces[namespace]
-                if (
-                    hasattr(model, "__registry_get_structure__")
-                    and namespace in cached_data
-                ):
-                    model.__anyblok_assembled_components__ = cached_data[
-                        namespace
-                    ]
-        else:
-            cached_data = {}
-            for namespace in registry.loaded_registries["Model_names"]:
-                model = registry.loaded_namespaces[namespace]
-                if hasattr(model, "__registry_get_structure__"):
-                    model.__anyblok_assembled_components__ = (
-                        model.__registry_get_structure__()
-                    )
-                    cached_data[
-                        namespace
-                    ] = model.__anyblok_assembled_components__
-
-            # Save the new cache and update DB safely
-            try:
-                with open(cache_file, "wb") as f:
-                    pickle.dump(cached_data, f)
-            except Exception:
-                pass
-
-            # Update DB fingerprint using a raw connection
-            try:
-                from sqlalchemy import text
-
-                val = json.dumps({"value": fingerprint})
-                with registry.engine.connect() as conn:
-                    with conn.begin():
-                        conn.execute(
-                            text(
-                                "UPDATE system_parameter SET value = :val WHERE key = 'anyblok.registry.fingerprint'"
-                            ),
-                            {"val": val},
-                        )
-                        res = conn.execute(
-                            text(
-                                "SELECT 1 FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
-                            )
-                        ).fetchone()
-                        if not res:
-                            conn.execute(
-                                text(
-                                    "INSERT INTO system_parameter (key, value, multi) VALUES ('anyblok.registry.fingerprint', :val, False)"
-                                ),
-                                {"val": val},
-                            )
-                registry.engine.dispose()
-            except Exception:
-                pass
+        # import json
+        # import os
+        # import pickle
+        # 
+        # cache_file = ".anyblok_cache"
+        # fingerprint = registry.get_fingerprint()
+        # 
+        # # Try to load fingerprint from DB using a raw connection to avoid uninitialized session issues
+        # db_fingerprint = None
+        # try:
+        #     from sqlalchemy import text
+        # 
+        #     with registry.engine.connect() as conn:
+        #         res = conn.execute(
+        #             text(
+        #                 "SELECT value FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
+        #             )
+        #         ).fetchone()
+        #         if res and res[0]:
+        #             db_fingerprint = json.loads(res[0]).get("value")
+        #     registry.engine.dispose()
+        # except Exception:
+        #     pass
+        # 
+        # cached_data = None
+        # if db_fingerprint == fingerprint and os.path.exists(cache_file):
+        #     try:
+        #         with open(cache_file, "rb") as f:
+        #             cached_data = pickle.load(f)
+        #     except Exception:
+        #         pass
+        # 
+        # if cached_data is not None:
+        #     for namespace in registry.loaded_registries["Model_names"]:
+        #         model = registry.loaded_namespaces[namespace]
+        #         if (
+        #             hasattr(model, "__registry_get_structure__")
+        #             and namespace in cached_data
+        #         ):
+        #             model.__anyblok_assembled_components__ = cached_data[
+        #                 namespace
+        #             ]
+        # else:
+        #     cached_data = {}
+        #     for namespace in registry.loaded_registries["Model_names"]:
+        #         model = registry.loaded_namespaces[namespace]
+        #         if hasattr(model, "__registry_get_structure__"):
+        #             model.__anyblok_assembled_components__ = (
+        #                 model.__registry_get_structure__()
+        #             )
+        #             cached_data[
+        #                 namespace
+        #             ] = model.__anyblok_assembled_components__
+        # 
+        #     # Save the new cache and update DB safely
+        #     try:
+        #         with open(cache_file, "wb") as f:
+        #             pickle.dump(cached_data, f)
+        #     except Exception:
+        #         pass
+        # 
+        #     # Update DB fingerprint using a raw connection
+        #     try:
+        #         from sqlalchemy import text
+        # 
+        #         val = json.dumps({"value": fingerprint})
+        #         with registry.engine.connect() as conn:
+        #             with conn.begin():
+        #                 conn.execute(
+        #                     text(
+        #                         "UPDATE system_parameter SET value = :val WHERE key = 'anyblok.registry.fingerprint'"
+        #                     ),
+        #                     {"val": val},
+        #                 )
+        #                 res = conn.execute(
+        #                     text(
+        #                         "SELECT 1 FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
+        #                     )
+        #                 ).fetchone()
+        #                 if not res:
+        #                     conn.execute(
+        #                         text(
+        #                             "INSERT INTO system_parameter (key, value, multi) VALUES ('anyblok.registry.fingerprint', :val, False)"
+        #                         ),
+        #                         {"val": val},
+        #                     )
+        #         registry.engine.dispose()
+        #     except Exception:
+        #         pass
 
     @classmethod
     def initialize_callback(cls, registry):

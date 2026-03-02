@@ -226,3 +226,28 @@ def return_list(entry):
         entry = [entry]
 
     return entry
+
+def merge_structure(into_structure, from_structure):
+    for key, values in from_structure.items():
+        if key == 'bases': 
+            if key not in into_structure:
+                into_structure[key] = []
+
+            for b in values[::-1]:
+                if b not in into_structure['bases']:
+                    into_structure['bases'].insert(0, b)
+        elif isinstance(values, dict):
+            if key not in into_structure:
+                into_structure[key] = {}
+
+            into_structure[key].update(values)
+        elif isinstance(values, set):
+            if key not in into_structure:
+                into_structure[key] = set()
+
+            into_structure[key] |= values
+        elif isinstance(values, bool):
+            if key not in into_structure:
+                into_structure[key] = False
+
+            into_structure[key] = into_structure[key] or from_structure[key]

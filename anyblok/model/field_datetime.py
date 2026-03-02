@@ -23,11 +23,14 @@ class AutoUpdatePlugin(ModelPluginBase):
         :param namespace: the namespace of the model
         :param transformation_properties: the properties of the model
         """
+        for b in getattr(base, '__anyblok_bases__', []):
+            b_ns = b.__registry_name__
+            if b_ns.startswith('Model.'):
+                self.after_model_construction(self.registry.get(b.__registry_name__), namespace, transformation_properties)
+
         fields = [
             c
-            for c, f in self.registry.loaded_namespaces_first_step[namespace][
-                "columns"
-            ].items()
+            for c, f in base.anyblok_structure["columns"].items()
             if isinstance(f, DateTime) and f.auto_update
         ]
 

@@ -27,10 +27,16 @@ class CachePlugin(ModelPluginBase):
         if hasattr(base, "__declared_caches__"):
             transformation_properties["caches"].update(base.__declared_caches__)
 
-    def before_model_construction(
+    def _before_model_construction(
         self, namespace, first_step, properties, transformation_properties
     ):
         for name, cache in transformation_properties["caches"].items():
+            properties[name] = self.add_cache_method(namespace, name, cache)
+
+    def before_model_construction(
+        self, namespace, tablename, properties, transformation_properties
+    ):
+        for name, cache in properties['anyblok_structure']["caches"].items():
             properties[name] = self.add_cache_method(namespace, name, cache)
 
     def add_cache_method(self, namespace, name, cache):

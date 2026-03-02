@@ -40,6 +40,22 @@ class EventPlugin(ModelPluginBase):
                 if val not in ev2:
                     ev2.append(val)
 
+    def before_model_construction(
+        self, namespace, tablename, properties, transformation_properties
+    ):
+        if properties['anyblok_structure']["events"]:
+            events = self.registry.events
+            for mapper, attr in properties['anyblok_structure']["events"]:
+                model = mapper.model.model_name
+                event = mapper.event
+
+                ev1 = events.setdefault(model, {})
+                ev2 = ev1.setdefault(event, [])
+
+                val = (namespace, attr)
+                if val not in ev2:
+                    ev2.append(val)
+
 
 class SQLAlchemyEventPlugin(ModelPluginBase):
     def transform_base(
@@ -57,6 +73,18 @@ class SQLAlchemyEventPlugin(ModelPluginBase):
                         ModelAttribute(namespace, attr),
                     )
                 )
+
+    def before_model_construction(
+        self, namespace, tablename, properties, transformation_properties
+    ):
+        for mapper, attr in properties['anyblok_structure']["sqlalchemy_events"]:
+            self.registry._sqlalchemy_known_events.append(
+                (
+                    mapper,
+                    namespace,
+                    ModelAttribute(namespace, attr),
+                )
+            )
 
 
 class AutoSQLAlchemyORMEventPlugin(ModelPluginBase):

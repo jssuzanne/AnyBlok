@@ -98,14 +98,8 @@ class SqlMixin:
     def clear_all_model_caches(cls):
         super().clear_all_model_caches()
         cls.__anyblok_assembled_components__ = None
-        Cache = cls.anyblok.System.Cache
-        Cache.invalidate(cls, "__registry_get_structure__")
-        Cache.invalidate(cls, "fields_name")
-        Cache.invalidate(cls, "getFieldType")
-        Cache.invalidate(cls, "get_primary_keys")
-        Cache.invalidate(cls, "find_remote_attribute_to_expire")
-        Cache.invalidate(cls, "find_relationship")
-        Cache.invalidate(cls, "get_hybrid_property_columns")
+        for cache in cls.anyblok_structure['caches']:
+            cls.anyblok.System.Cache.invalidate(cls, cache)
 
     @classmethod
     def define_table_args(cls):

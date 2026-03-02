@@ -348,12 +348,12 @@ class TestRegistry2:
         register = Declarations.register
         Type = getattr(Declarations, typename)
         if inherit is None:
-            inherit = object
+            inherit = ()
         else:
-            inherit = getattr(Declarations.Mixin, inherit)
+            inherit = getattr(Declarations.Mixin, inherit),
 
         @register(Type, name_=name)
-        class Test(inherit):
+        class Test(*inherit):
             @classmethod
             def foo(cls):
                 if usesuper:

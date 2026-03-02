@@ -348,8 +348,8 @@ class TestSimpleCache:
     def add_model_with_method_core_cached_with_two_model(self):
         @register(Core)
         class Base:
-            def __init__(self):
-                super(Base, self).__init__()
+            def __init__(self, *a, **kw):
+                super(Base, self).__init__(*a, **kw)
                 self.x = 0
                 self.z = 0
 
