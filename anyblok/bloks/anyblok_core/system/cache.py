@@ -16,7 +16,7 @@ register = Declarations.register
 System = Declarations.Model.System
 
 
-@register(System)
+@register(System, auto_load=True)
 class Cache:
     last_cache_id = None
 

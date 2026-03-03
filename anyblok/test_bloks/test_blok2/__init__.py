@@ -16,3 +16,6 @@ class TestBlok(Blok):
     required = [
         "test-blok1",
     ]
+
+    def load(self):
+        self.anyblok.Test.insert(blok=self.name, mode="load")

@@ -21,6 +21,21 @@ from anyblok.testing import load_configuration
 
 logger = getLogger(__name__)
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--load-without-migration", 
+        action="store_true", 
+        default=eval(
+            os.environ.get("ANYBLOK_UNITTEST_WITHOUT_MIGRATION", "False")
+        ),
+        help="Active le mode loadwithoutmigration"
+    )
+
+
+def pytest_configure(config):
+    if config.getoption("--load-without-migration"):
+        Configuration.set('withoutautomigration', True)
+
 
 @pytest.fixture(scope="session")
 def configuration_loaded(request):
@@ -32,9 +47,7 @@ def init_session(request, configuration_loaded):
     # Init registry
     additional_setting = {
         "unittest": True,
-        "loadwithoutmigration": eval(
-            os.environ.get("ANYBLOK_UNITTEST_WITHOUT_MIGRATION", "False")
-        ),
+        "loadwithoutmigration": Configuration.get('withoutautomigration'),
     }
 
     if len(BlokManager.list()) == 0:

@@ -783,7 +783,7 @@ class TestBlokOrder:
         self.check_order(
             registry,
             "load",
-            ["anyblok-core", "test-blok1", "test-blok2", "test-blok3"],
+            ["test-blok1", "test-blok2", "test-blok3"],
         )
 
 

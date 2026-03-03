@@ -86,6 +86,68 @@ def check_model_base(cls, registryname):
         )
 
 
+class ModelProxy:
+
+    def __init__(self, registry, namespace):
+        # On utilise object.__setattr__ pour éviter de déclencher 
+        # une logique de Proxy pendant l'initialisation
+        object.__setattr__(self, 'registry', registry)
+        object.__setattr__(self, 'namespace', namespace)
+        object.__setattr__(self, 'children_namespaces', {})
+        object.__setattr__(self, 'parent', None)
+        object.__setattr__(self, 'Model', None)
+
+    def __repr__(self):
+        return f"<Proxy ({self.namespace})/>"
+
+    def load_model(self, load_dependencies=True):
+        if self.Model is None:
+            first_step = self.registry.loaded_namespaces_first_step[self.namespace]
+            for inherit in first_step['__inherits__']:
+                _Model = self.registry.get(inherit)
+                if isinstance(_Model, ModelProxy):
+                    _Model.load_model()
+
+            for relationship in first_step['__anyblok_structure__']['relationships'].values():
+                if isinstance(relationship, FakeField):
+                    model = relationship.mapper.model_name
+                else:
+                    model = relationship.model.model_name
+
+                if model == self.namespace:
+                    continue
+
+                _Model = self.registry.get(model)
+                if isinstance(_Model, ModelProxy):
+                    _Model.load_model()
+
+            RealModel = Model.load_namespace_second_step(self.registry, self.namespace)
+            object.__setattr__(self, 'Model', RealModel)
+
+        return self.Model
+
+    def __getattr__(self, attribute):
+        ns = f"{self.namespace}.{attribute}"
+        if ns in self.registry.loaded_namespaces_first_step:
+            if attribute in self.children_namespaces:
+                return self.children_namespaces[attribute]
+
+            raise AttributeError(f"'{self.namespace}' has no attribute '{attribute}'")
+
+        RealModel = self.load_model()
+        return getattr(RealModel, attribute)
+
+    def __setattr__(self, attribut, value):
+        if isinstance(value, ModelProxy):
+            self.children_namespaces[attribut] = value
+            object.__setattr__(value, 'parent', self)
+
+        object.__setattr__(self, attribut, value)
+
+    def __call__(self, *args, **kwargs):
+        RealModel = self.load_model()
+        return RealModel(*args, **kwargs)
+    
 @Declarations.add_declaration_type(
     isAnEntry=True,
     pre_assemble="pre_assemble_callback",
@@ -303,6 +365,7 @@ class Model:
             "sqlalchemy_events": set(),
             "bases": [],
         }
+        inherits = []
 
         def _merge_structure(cls_):
             final_structure['bases'].insert(0, cls_)
@@ -321,6 +384,7 @@ class Model:
                     anyblok_structure['fields'] = {}
                     anyblok_structure['columns'] = {}
                     anyblok_structure['relationships'] = {}
+                    inherits.append(b_ns.__registry_name__)
 
                 merge_structure(final_structure, anyblok_structure)
 
@@ -344,18 +408,12 @@ class Model:
                     model_factory.get_structure(final_structure)
                     if namespace.startswith('Model.') else final_structure
                 ),
+                "__inherits__": inherits,
             }
         )
 
         if has_any_field and "__tablename__" in ns["properties"]:
             properties["__tablename__"] = ns["properties"]["__tablename__"]
-
-        if "__depends__" in ns["properties"]:
-            properties["__depends__"] = return_list(
-                ns["properties"]["__depends__"]
-            )
-        else:
-            properties["__depends__"] = []
 
         registry.loaded_namespaces_first_step[namespace] = properties
         return properties
@@ -382,13 +440,6 @@ class Model:
                 bases.insert(0, base)
 
         properties['__anyblok_structure__']['bases'] = bases
-
-    @classmethod
-    def init_core_properties_and_bases(cls, registry, bases, properties):
-        properties["loaded_columns"] = []
-        properties["hybrid_property_columns"] = []
-        properties["loaded_fields"] = {}
-        properties["__model_factory__"].insert_core_bases(bases, properties)
 
     @classmethod
     def declare_all_fields(cls, registry, namespace, properties):
@@ -422,13 +473,7 @@ class Model:
         if "__tablename__" in properties:
             del properties["__tablename__"]
 
-        for t in registry.loaded_namespaces.keys():
-            m = registry.loaded_namespaces[t]
-            if m.is_sql:
-                if getattr(m, "__tablename__"):
-                    if m.__tablename__ == tablename:
-                        properties["__table__"] = m.__table__
-                        tablename = namespace.replace(".", "_").lower()
+        properties['__table__'] = registry.declarativebase.metadata.tables.get(tablename)
 
         for p, f in properties["__anyblok_structure__"]["fields"].items():
             cls.declare_field(
@@ -444,7 +489,6 @@ class Model:
         cls,
         registry,
         namespace,
-        realregistryname=None,
     ):
         """Return the bases and the properties of the namespace
 
@@ -455,13 +499,13 @@ class Model:
         :rtype: the list od the bases and the properties
         :exception: ModelException
         """
-        if namespace in registry.loaded_namespaces:
-            return registry.loaded_namespaces[namespace]
+        pmodel = registry.loaded_namespaces[namespace]
+        if not isinstance(pmodel, ModelProxy):
+            return pmodel
 
         first_step = registry.loaded_namespaces_first_step[namespace]
         tablename = first_step.get("__tablename__")
         modelname = namespace.replace(".", "")
-        first_step['__anyblok_structure__']['bases'].append(registry.registry_base)
         registry.call_plugins("init", first_step)
         cls.apply_inheritance_base(registry, first_step)
 
@@ -485,9 +529,10 @@ class Model:
         )
 
         registry.add_in_registry(namespace, base)
-        registry.loaded_namespaces[namespace] = base
 
+        registry.loaded_namespaces[namespace] = base
         registry.call_plugins("after_model_construction", base)
+        return base
 
     @classmethod
     def assemble_callback(cls, registry):
@@ -496,126 +541,24 @@ class Model:
 
         :param registry: registry to update
         """
-        from graphlib import CycleError, TopologicalSorter
-
         registry.loaded_namespaces_first_step = {}
         registry.loaded_views = {}
+        registry.auto_load = []
 
         # get all the information to create a namespace
         for namespace in registry.loaded_registries["Model_names"]:
+            properties = registry.loaded_registries[namespace]['properties']
             cls.load_namespace_first_step(registry, namespace)
+            model = ModelProxy(registry, namespace)
+            registry.add_in_registry(namespace, model)
+            registry.loaded_namespaces[namespace] = model
+            if properties.get('auto_load'):
+                registry.auto_load.append(namespace)
 
-        # create the namespace with all the information come from first
-        # step
-        ts = TopologicalSorter()
-        for namespace in registry.loaded_registries["Model_names"]:
-            first_step = registry.loaded_namespaces_first_step[namespace]
-            deps = []
-            deps.extend(first_step.get("__depends__", []))
-            for base in first_step.get("__bases__", []):
-                if isinstance(base, str):
-                    if base in registry.loaded_registries["Model_names"]:
-                        deps.append(base)
-
-            ts.add(namespace, *deps)
-
-        try:
-            for namespace in ts.static_order():
+        if not registry.loadwithoutmigration:
+            for namespace in registry.loaded_registries["Model_names"]:
                 cls.load_namespace_second_step(registry, namespace)
-        except CycleError as e:
-            raise ModelException("Circular dependency in models: %s" % str(e))
 
-        # Now that all models are assembled, pre-assemble their components
-        # This allows backref discovery to see all models
-        # import json
-        # import os
-        # import pickle
-        # 
-        # cache_file = ".anyblok_cache"
-        # fingerprint = registry.get_fingerprint()
-        # 
-        # # Try to load fingerprint from DB using a raw connection to avoid uninitialized session issues
-        # db_fingerprint = None
-        # try:
-        #     from sqlalchemy import text
-        # 
-        #     with registry.engine.connect() as conn:
-        #         res = conn.execute(
-        #             text(
-        #                 "SELECT value FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
-        #             )
-        #         ).fetchone()
-        #         if res and res[0]:
-        #             db_fingerprint = json.loads(res[0]).get("value")
-        #     registry.engine.dispose()
-        # except Exception:
-        #     pass
-        # 
-        # cached_data = None
-        # if db_fingerprint == fingerprint and os.path.exists(cache_file):
-        #     try:
-        #         with open(cache_file, "rb") as f:
-        #             cached_data = pickle.load(f)
-        #     except Exception:
-        #         pass
-        # 
-        # if cached_data is not None:
-        #     for namespace in registry.loaded_registries["Model_names"]:
-        #         model = registry.loaded_namespaces[namespace]
-        #         if (
-        #             hasattr(model, "__registry_get_structure__")
-        #             and namespace in cached_data
-        #         ):
-        #             model.__anyblok_assembled_components__ = cached_data[
-        #                 namespace
-        #             ]
-        # else:
-        #     cached_data = {}
-        #     for namespace in registry.loaded_registries["Model_names"]:
-        #         model = registry.loaded_namespaces[namespace]
-        #         if hasattr(model, "__registry_get_structure__"):
-        #             model.__anyblok_assembled_components__ = (
-        #                 model.__registry_get_structure__()
-        #             )
-        #             cached_data[
-        #                 namespace
-        #             ] = model.__anyblok_assembled_components__
-        # 
-        #     # Save the new cache and update DB safely
-        #     try:
-        #         with open(cache_file, "wb") as f:
-        #             pickle.dump(cached_data, f)
-        #     except Exception:
-        #         pass
-        # 
-        #     # Update DB fingerprint using a raw connection
-        #     try:
-        #         from sqlalchemy import text
-        # 
-        #         val = json.dumps({"value": fingerprint})
-        #         with registry.engine.connect() as conn:
-        #             with conn.begin():
-        #                 conn.execute(
-        #                     text(
-        #                         "UPDATE system_parameter SET value = :val WHERE key = 'anyblok.registry.fingerprint'"
-        #                     ),
-        #                     {"val": val},
-        #                 )
-        #                 res = conn.execute(
-        #                     text(
-        #                         "SELECT 1 FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
-        #                     )
-        #                 ).fetchone()
-        #                 if not res:
-        #                     conn.execute(
-        #                         text(
-        #                             "INSERT INTO system_parameter (key, value, multi) VALUES ('anyblok.registry.fingerprint', :val, False)"
-        #                         ),
-        #                         {"val": val},
-        #                     )
-        #         registry.engine.dispose()
-        #     except Exception:
-        #         pass
 
     @classmethod
     def initialize_callback(cls, registry):
@@ -629,17 +572,19 @@ class Model:
 
         :param registry: registry to update
         """
-        for Model in registry.loaded_namespaces.values():
-            Model.initialize_model()
-            if not registry.loadwithoutmigration:
-                Model.clear_all_model_caches()
-
         if registry.loadwithoutmigration:
+            for namespace in registry.auto_load:
+                Model = registry.get(namespace)
+                Model.initialize_model()
+
             return False
 
+        for Model in registry.loaded_namespaces.values():
+            Model.initialize_model()
+            Model.clear_all_model_caches()
+
         Blok = registry.System.Blok
-        if not registry.withoutautomigration:
-            registry.update_blok_list()
+        registry.update_blok_list()
 
         bloks = Blok.list_by_state("touninstall")
         Blok.uninstall_all(*bloks)

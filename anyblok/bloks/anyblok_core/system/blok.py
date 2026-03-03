@@ -262,32 +262,6 @@ class Blok:
         self.state = "uninstalled"
         self.installed_version = None
 
-    def load(self):
-        """Method to load the blok when the registry is completly loaded"""
-        name = self.name
-        blok_cls = BlokManager.get(name)
-        if blok_cls is None:
-            logger.warning(
-                "load(): class of Blok %r not found, " "Blok can't be loaded",
-                name,
-            )
-            return  # pragma: no cover
-
-        logger.info("Loading Blok %r", name)
-        blok_cls(self.anyblok).load()
-        logger.debug("Succesfully loaded Blok %r", name)
-
-    @classmethod
-    def load_all(cls):
-        """Load all the installed bloks"""
-        query = cls.select_sql_statement()
-        query = query.where(cls.state == "installed")
-        query = query.order_by(cls.state)
-
-        query_res = cls.execute_sql_statement(query).scalars()
-        for blok in query_res:
-            blok.load()
-
     @ClassMethodCache()
     def is_installed(cls, blok_name):
         return (

@@ -650,8 +650,14 @@ class Many2One(RelationShip):
             properties["add_in_table_args"].append(self)
 
     def remote_model_is_a_table(self, registry):
+        from .model import ModelProxy
+
         if self.model.model_name not in registry.loaded_namespaces:
             return True  # by default
+
+        Model = registry.loaded_namespaces[self.model.model_name]
+        if isinstance(Model, ModelProxy):
+            return True
 
         return hasattr(registry.get(self.model.model_name), "__table__")
 

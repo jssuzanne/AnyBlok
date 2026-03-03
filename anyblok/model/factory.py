@@ -52,9 +52,12 @@ class ModelFactory(BaseFactory):
                 properties["__tablename__"]
             ] = True
 
+        bases = tuple(properties['__anyblok_structure__']['bases']) + (
+            self.registry.registry_base,)
+
         return type(
             modelname,
-            tuple(properties['__anyblok_structure__']['bases']),
+            bases,
             properties
         )
 
@@ -85,10 +88,11 @@ class ViewFactory(BaseFactory):
 
     # def build_model(self, modelname, bases, properties):
     def build_model(self, modelname, properties):
+        bases = tuple(properties['__anyblok_structure__']['bases']) + (
+            self.registry.registry_base,)
         Model = type(
             modelname, 
-            # tuple(bases), 
-            tuple(properties['__anyblok_structure__']['bases']),
+            bases,
             properties,
         )
         self.apply_view(Model, properties)

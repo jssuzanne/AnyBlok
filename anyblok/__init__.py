@@ -85,7 +85,7 @@ def start(
     processName,
     entry_points=None,
     useseparator=False,
-    loadwithoutmigration=False,
+    loadwithoutmigration=None,
     config=None,
     **kwargs,
 ):
@@ -113,6 +113,8 @@ def start(
         config = {}
 
     Configuration.load(processName, useseparator=useseparator, **config)
+    if loadwithoutmigration is None:
+        loadwithoutmigration = Configuration.get('withoutautomigration')
 
     configuration_post_load()
     if entry_points:

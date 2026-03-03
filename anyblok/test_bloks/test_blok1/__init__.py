@@ -20,3 +20,6 @@ class TestBlok(Blok):
         from . import test
 
         reload(test)
+
+    def load(self):
+        self.anyblok.Test.insert(blok=self.name, mode="load")

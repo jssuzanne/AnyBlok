@@ -562,7 +562,6 @@ class Registry:
             core: [] for core in RegistryManager.declared_cores
         }
         self.ordered_loaded_bloks = []
-        self.loaded_namespaces = {}
         self.children_namespaces = {}
         self.properties = {}
         self.removed = []
@@ -1090,7 +1089,19 @@ class Registry:
         if len(toinstall) > 1 or mustreload:
             self.reload()
         else:
-            self.System.Blok.load_all()
+            blok_names = self.get_bloks_by_states("installed")
+            for blok_name in blok_names:
+                blok_cls = BlokManager.get(blok_name)
+                if blok_cls is None:
+                    logger.warning(
+                        "load(): class of Blok %r not found, " "Blok can't be loaded",
+                        blok_name,
+                    )
+                    continue  # pragma: no cover
+
+                logger.info("Loading Blok %r", blok_name)
+                blok_cls(self).load()
+                logger.debug("Succesfully loaded Blok %r", blok_name)
 
         self.loadwithoutmigration = False
 
