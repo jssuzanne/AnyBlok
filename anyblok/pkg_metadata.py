@@ -6,10 +6,19 @@
 # v. 2.0. if a copy of the mpl was not distributed with this file,you can
 # obtain one at http://mozilla.org/mpl/2.0/.
 try:
-    from importlib_metadata import entry_points
+    from importlib_metadata import entry_points, EntryPoints
 except ImportError:
-    from importlib.metadata import entry_points
+    from importlib.metadata import entry_points, EntryPoints
 
 
 def iter_entry_points(group):
     return entry_points(group=group)
+
+def load_multiple_groups(groups):
+    all_eps = entry_points()
+    
+    selected_eps = []
+    for group in groups:
+        selected_eps.extend(all_eps.select(group=group))
+        
+    return EntryPoints(selected_eps)

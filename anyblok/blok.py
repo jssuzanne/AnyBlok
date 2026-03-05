@@ -10,12 +10,13 @@ from logging import getLogger
 from os.path import dirname
 from sys import modules
 from time import sleep
+from graphlib import CycleError, TopologicalSorter
 
 from anyblok.environment import EnvironmentManager
 from anyblok.imp import ImportManager
 
 from .logging import log
-from .pkg_metadata import iter_entry_points
+from .pkg_metadata import load_multiple_groups
 
 logger = getLogger(__name__)
 
@@ -124,29 +125,6 @@ class BlokManager:
         RegistryManager.unload()
 
     @classmethod
-    def get_needed_blok_dependencies(cls, blok):
-        """Get all dependencies for the blok given
-
-        :param blok:
-        :return:
-        """
-        for required in cls.bloks[blok].required:
-            if not cls.get_needed_blok(required):
-                cls.add_undefined_blok(required)
-
-            cls.bloks[required].required_by.append(blok)
-
-        for optional in cls.bloks[blok].optional:
-            if cls.get_needed_blok(optional):
-                cls.bloks[optional].optional_by.append(blok)
-
-        for conditional in cls.bloks[blok].conditional:
-            cls.bloks[conditional].conditional_by.append(blok)
-
-        for conflicting in cls.bloks[blok].conflicting:
-            cls.bloks[conflicting].conflicting_by.append(blok)
-
-    @classmethod
     def blok_importers(cls, blok):
         EnvironmentManager.set("current_blok", blok)
 
@@ -157,28 +135,6 @@ class BlokManager:
         else:
             mod = ImportManager.get(blok)
             mod.reload()
-
-    @classmethod
-    def get_needed_blok(cls, blok):
-        """Get and import/load the blok given with dependencies
-
-        :param blok:
-        :return:
-        """
-        if cls.has(blok):
-            return True
-
-        if blok not in cls.bloks:
-            return False
-
-        cls.get_needed_blok_dependencies(blok)
-        cls.ordered_bloks.append(blok)
-        cls.blok_importers(blok)
-
-        if cls.bloks[blok].autoinstall:
-            cls.auto_install.append(blok)
-
-        return True
 
     @classmethod
     def add_undefined_blok(cls, name):
@@ -210,7 +166,6 @@ class BlokManager:
         if not entry_points:
             raise BlokManagerException("The entry_points mustn't be empty")
 
-        cls.entry_points = entry_points
 
         if EnvironmentManager.get("current_blok"):
             while EnvironmentManager.get("current_blok"):  # pragma: no cover
@@ -218,57 +173,64 @@ class BlokManager:
 
         EnvironmentManager.set("current_blok", "start")
 
+        cls.entry_points = entry_points
+        ts = TopologicalSorter()
+
+        eps = load_multiple_groups(entry_points)
+        if not eps:
+            raise BlokManagerException(
+                "Invalid bloks group %r" % entry_points
+            )
+
+        names = eps.names
+        for i in eps:
+            blok = i.load()
+            blok.required_by = []
+            blok.optional_by = []
+            blok.conditional_by = []
+            blok.conflicting_by = []
+            cls.set(i.name, blok)
+            blok.name = i.name
+
+            requirements = list(getattr(blok, "required", []))
+            optionals = list(x for x in getattr(blok, "optional", []) if x in names)
+            conditionals = list(x for x in getattr(blok, "conditional", [])if x in names)
+            ts.add(i.name, *(requirements + optionals + conditionals))
+
         try:
-            # 1. Discovery phase
-            for entry_point in entry_points:
-                count = 0
-                for i in iter_entry_points(entry_point):
-                    count += 1
-                    blok = i.load()
-                    blok.required_by = []
-                    blok.optional_by = []
-                    blok.conditional_by = []
-                    blok.conflicting_by = []
-                    cls.set(i.name, blok)
-                    blok.name = i.name
-
-                if not count:
-                    raise BlokManagerException(
-                        "Invalid bloks group %r" % entry_point
-                    )
-
-            # 2. Dependency expansion (to find UndefinedBloks)
-            to_process = list(cls.bloks.keys())
-            processed = set()
-            while to_process:
-                name = to_process.pop(0)
-                if name in processed:
-                    continue
-                processed.add(name)
-                blok = cls.bloks[name]
-                for dep in getattr(blok, "required", []):
-                    if dep not in cls.bloks:
-                        cls.add_undefined_blok(dep)
-                    to_process.append(dep)
-
-            # 3. Resolve order using TopologicalSorter
-            from .loader import AnyBlokLoaderError, resolve_dependencies
-
-            try:
-                order = resolve_dependencies(cls.bloks)
-            except AnyBlokLoaderError as e:
-                raise BlokManagerException(str(e))
-
-            # 4. Loading phase
+            ts.prepare()
             cls.ordered_bloks = []
-            for blok_name in order:
-                if not cls.has(blok_name):
-                    cls.get_needed_blok_dependencies(blok_name)
-                    cls.ordered_bloks.append(blok_name)
-                    cls.blok_importers(blok_name)
-                    if cls.bloks[blok_name].autoinstall:
-                        cls.auto_install.append(blok_name)
+            while ts.is_active():
+                ready = list(ts.get_ready())
+                ready.sort(
+                    key=lambda n: (getattr(cls.bloks.get(n, UndefinedBlok), "priority", 100), n)
+                )
+                for name in ready:
+                    if name not in cls.bloks:
+                        cls.add_undefined_blok(name)
+                    else:
+                        cls.ordered_bloks.append(name)
+                        for required in cls.bloks[name].required:
+                            cls.bloks[required].required_by.append(name)
 
+                        for optional in cls.bloks[name].optional:
+                            cls.bloks[optional].optional_by.append(name)
+
+                        for conditional in cls.bloks[name].conditional:
+                            cls.bloks[conditional].conditional_by.append(name)
+
+                        for conflicting in cls.bloks[name].conflicting:
+                            cls.bloks[conflicting].conflicting_by.append(name)
+
+                        cls.blok_importers(name)
+                        if cls.bloks[name].autoinstall:
+                            cls.auto_install.append(name)
+
+                    ts.done(name)
+        except CycleError as e:
+            raise BlokManagerException(
+                "Circular dependency detected in bloks: %s" % str(e)
+            )
         finally:
             EnvironmentManager.set("current_blok", None)
 
