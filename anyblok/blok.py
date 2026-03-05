@@ -9,10 +9,8 @@
 from logging import getLogger
 from os.path import dirname
 from sys import modules
-from time import sleep
 from graphlib import CycleError, TopologicalSorter
 
-from anyblok.environment import EnvironmentManager
 from anyblok.imp import ImportManager
 
 from .logging import log
@@ -23,10 +21,6 @@ logger = getLogger(__name__)
 
 class BlokManagerException(LookupError):
     """Simple exception class for BlokManager"""
-
-    def __init__(self, *args, **kwargs):
-        EnvironmentManager.set("current_blok", None)
-        super(BlokManagerException, self).__init__(*args, **kwargs)
 
 
 class BlokManager:
@@ -111,6 +105,7 @@ class BlokManager:
         entry_points += cls.entry_points
         cls.unload()
         cls.load(entry_points=entry_points)
+        ImportManager.reload_all(cls.ordered_bloks)
 
     @classmethod
     @log(logger, level="debug")
@@ -125,16 +120,9 @@ class BlokManager:
         RegistryManager.unload()
 
     @classmethod
-    def blok_importers(cls, blok):
-        EnvironmentManager.set("current_blok", blok)
-
-        if not ImportManager.has(blok):
-            # Import only if the blok doesn't exists, do not reload here
-            mod = ImportManager.add(blok)
-            mod.imports()
-        else:
-            mod = ImportManager.get(blok)
-            mod.reload()
+    def blok_import_declaration(cls, blok):
+        mod = ImportManager.add(blok)
+        mod.imports()
 
     @classmethod
     def add_undefined_blok(cls, name):
@@ -151,9 +139,6 @@ class BlokManager:
         )
         blok.__doc__ = "Blok undefined"
         cls.set(name, blok)
-        # here they are not python module to load, but this action
-        # add the undefined blok in registryManager
-        cls.blok_importers(name)
 
     @classmethod
     @log(logger, level="debug")
@@ -165,13 +150,6 @@ class BlokManager:
         """
         if not entry_points:
             raise BlokManagerException("The entry_points mustn't be empty")
-
-
-        if EnvironmentManager.get("current_blok"):
-            while EnvironmentManager.get("current_blok"):  # pragma: no cover
-                sleep(0.1)
-
-        EnvironmentManager.set("current_blok", "start")
 
         cls.entry_points = entry_points
         ts = TopologicalSorter()
@@ -222,7 +200,7 @@ class BlokManager:
                         for conflicting in cls.bloks[name].conflicting:
                             cls.bloks[conflicting].conflicting_by.append(name)
 
-                        cls.blok_importers(name)
+                        ImportManager.add(name)
                         if cls.bloks[name].autoinstall:
                             cls.auto_install.append(name)
 
@@ -231,8 +209,6 @@ class BlokManager:
             raise BlokManagerException(
                 "Circular dependency detected in bloks: %s" % str(e)
             )
-        finally:
-            EnvironmentManager.set("current_blok", None)
 
     @classmethod
     def getPath(cls, blok):

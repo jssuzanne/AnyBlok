@@ -18,7 +18,7 @@ from sqlalchemy_utils.functions import (
 
 from anyblok.blok import BlokManager
 from anyblok.config import Configuration, get_url
-from anyblok.environment import EnvironmentManager
+from anyblok.imp import ImportManager
 from anyblok.registry import RegistryManager
 from anyblok.testing import sgdb_in
 
@@ -36,14 +36,21 @@ def init_registry_with_bloks(bloks, function, **kwargs):
     anyblok_test_name = "anyblok-test"
     if anyblok_test_name not in bloks:
         bloks.append(anyblok_test_name)
+    
+    blok_test = BlokManager.bloks.pop(anyblok_test_name)
+    ImportManager.modules.pop(anyblok_test_name, None)
+    RegistryManager.loaded_bloks.pop(anyblok_test_name, None)
 
-    loaded_bloks = deepcopy(RegistryManager.loaded_bloks)
+    properties = {}
     if function is not None:
-        EnvironmentManager.set("current_blok", anyblok_test_name)
-        try:
+        def import_declaration_module(cls):
             function(**kwargs)
-        finally:
-            EnvironmentManager.set("current_blok", None)
+
+        properties['import_declaration_module'] = classmethod(import_declaration_module)
+
+    BlokManager.bloks[anyblok_test_name] = type(
+        anyblok_test_name, (blok_test,), properties)
+
     try:
         registry = RegistryManager.get(
             Configuration.get("db_name"), unittest=True
@@ -55,7 +62,8 @@ def init_registry_with_bloks(bloks, function, **kwargs):
         toupdate = [x for x in bloks if x in registry_bloks]
         registry.upgrade(install=toinstall, update=toupdate)
     finally:
-        RegistryManager.loaded_bloks = loaded_bloks
+        del RegistryManager.loaded_bloks[anyblok_test_name]
+        BlokManager.bloks[anyblok_test_name] = blok_test
 
     return registry
 
@@ -73,12 +81,6 @@ def base_loaded(request, configuration_loaded):
     if not database_exists(url):
         db_template_name = Configuration.get("db_template_name", None)
         create_database(url, template=db_template_name)
-
-    BlokManager.load()
-    registry = init_registry_with_bloks([], None)
-    registry.commit()
-    registry.close()
-    BlokManager.unload()
 
 
 @pytest.fixture(scope="module")

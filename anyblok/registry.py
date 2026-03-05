@@ -853,6 +853,13 @@ class Registry:
         if blok not in BlokManager.bloks:
             return False  # pragma:no cover
 
+        if blok not in RegistryManager.loaded_bloks:
+            if BlokManager.has(blok):
+                RegistryManager.init_blok(blok)
+                BlokManager.blok_import_declaration(blok)
+            else:
+                raise Exception('Plop')
+
         b = BlokManager.bloks[blok](self)
         self.load_bloks(b.required + b.conditional, toinstall, toload)
         self.load_bloks(b.optional, toinstall, toload, required=False)

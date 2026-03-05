@@ -6,6 +6,8 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 from importlib import reload as reload_module
+from time import sleep
+from anyblok.environment import EnvironmentManager
 
 
 def reload_module_if_blok_is_reloading(module):
@@ -77,19 +79,37 @@ class ImportManager:
         """
         return blok in cls.modules
 
+    @classmethod
+    def reload_all(cls, ordered_bloks):
+        for blok in ordered_bloks:
+            if cls.has(blok):
+                mod = cls.get(blok)
+                mod.reload()
+
 
 class Loader:
     def __init__(self, blok):
         self.blok = blok
+        self.loaded = False
 
     def imports(self):
         """Imports modules and / or packages listed in the blok path"""
-        from anyblok.blok import BlokManager
-        from anyblok.registry import RegistryManager
+        if self.loaded:
+            return
 
-        RegistryManager.init_blok(self.blok)
-        b = BlokManager.get(self.blok)
-        b.import_declaration_module()
+        from anyblok.blok import BlokManager
+
+        if EnvironmentManager.get("current_blok"):
+            while EnvironmentManager.get("current_blok"):  # pragma: no cover
+                sleep(0.1)
+
+        EnvironmentManager.set("current_blok", self.blok)
+        try:
+            b = BlokManager.get(self.blok)
+            b.import_declaration_module()
+            self.loaded = True
+        finally:
+            EnvironmentManager.set("current_blok", None)
 
     def reload(self):
         """Reload all the imports for this module
@@ -104,9 +124,16 @@ class Loader:
         if not hasattr(b, "reload_declaration_module"):
             return
 
+
+        if EnvironmentManager.get("current_blok"):
+            while EnvironmentManager.get("current_blok"):  # pragma: no cover
+                sleep(0.1)
+
+        EnvironmentManager.set("current_blok", self.blok)
         try:
             EnvironmentManager.set("reload", True)
             RegistryManager.init_blok(self.blok)
             b.reload_declaration_module(reload_module)
         finally:
             EnvironmentManager.set("reload", False)
+            EnvironmentManager.set("current_blok", None)
