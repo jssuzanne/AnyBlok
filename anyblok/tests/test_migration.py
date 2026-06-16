@@ -426,22 +426,6 @@ class TestMigration:
         # particuliar case of check constraint
         t.check("anyblok_ck_test__test").drop()
 
-    def test_detect_under_noautocommit_flag(self, registry):
-        with cnx(registry) as conn:
-            registry.Test.__table__.drop(bind=conn)
-            registry.Test.__table__ = Table(
-                "test",
-                MetaData(),
-                Column("integer", Integer, primary_key=True),
-                Column("other", String(64), nullable=False),
-            )
-            registry.Test.__table__.create(bind=conn)
-
-        registry.migration.detect_changed()
-        registry.migration.withoutautomigration = True
-        with pytest.raises(MigrationException):
-            registry.migration.detect_changed()
-
     def test_detect_column_added(self, registry):
         # Remove a column on the table force the detection to found new column
         # which is existing in metadata but not in table

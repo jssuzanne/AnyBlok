@@ -92,14 +92,6 @@ class MigrationReport:
 
         return self.migration.ignore_migration_for.get(table, default)
 
-    def raise_if_withoutautomigration(self):
-        if self.migration.withoutautomigration:
-            raise MigrationException(
-                "The metadata and the base structue are "
-                "different, or this difference is "
-                "forbidden in 'no auto migration' mode"
-            )
-
     def table_is_added(self, table):
         for action in self.actions:
             if action[0] == "add_table" and action[1] is table:
@@ -108,12 +100,10 @@ class MigrationReport:
         return False
 
     def init_add_schema(self, diff):
-        self.raise_if_withoutautomigration()
         _, schema = diff
         self.log_names.append("Add schema %s" % schema)
 
     def init_add_table(self, diff):
-        self.raise_if_withoutautomigration()
         _, table = diff
         table_name = (
             "%s.%s" % (table.schema, table.name) if table.schema else table.name
@@ -121,7 +111,6 @@ class MigrationReport:
         self.log_names.append("Add table %s" % table_name)
 
     def init_add_column(self, diff):
-        self.raise_if_withoutautomigration()
         _, schema, table, column = diff
         if self.ignore_migration_for(schema, table) is True:
             return True
@@ -178,9 +167,7 @@ class MigrationReport:
             "Drop constraint %s on %s" % (constraint.name, constraint.table)
         )
 
-        if self.can_remove_constraints(constraint.name):
-            self.raise_if_withoutautomigration()
-        else:
+        if not self.can_remove_constraints(constraint.name):
             return True
 
     def can_remove_index(self, name):
@@ -196,7 +183,6 @@ class MigrationReport:
         return False
 
     def init_add_index(self, diff):
-        self.raise_if_withoutautomigration()
         _, constraint = diff
         if (
             self.ignore_migration_for(
@@ -233,13 +219,10 @@ class MigrationReport:
             return True
 
         self.log_names.append("Drop index %s on %s" % (index.name, index.table))
-        if self.can_remove_index(index.name):
-            self.raise_if_withoutautomigration()
-        else:
+        if not self.can_remove_index(index.name):
             return True
 
     def init_add_fk(self, diff):
-        self.raise_if_withoutautomigration()
         _, fk = diff
         if self.ignore_migration_for(fk.table.schema, fk.table.name) is True:
             return True
@@ -281,10 +264,8 @@ class MigrationReport:
         if not self.can_remove_fk_constraints(fk.name):
             return True
 
-        self.raise_if_withoutautomigration()
 
     def init_add_ck(self, diff):
-        self.raise_if_withoutautomigration()
         _, table, ck = diff
         if self.ignore_migration_for(ck.table.schema, table) is True:
             return True
@@ -311,10 +292,8 @@ class MigrationReport:
         if not self.can_remove_check_constraints(ck["name"]):
             return True
 
-        self.raise_if_withoutautomigration()
 
     def init_add_constraint(self, diff):
-        self.raise_if_withoutautomigration()
         _, constraint = diff
         columns = []
 
@@ -359,7 +338,6 @@ class MigrationReport:
 
         if self.can_remove_column():
             self.log_names.append(msg)
-            self.raise_if_withoutautomigration()
             return False
 
         fk_removed = []
@@ -373,7 +351,6 @@ class MigrationReport:
                     fk_removed.append(fk.name)
 
         if column.nullable is False:
-            self.raise_if_withoutautomigration()
             msg += " (not null)"
             self.log_names.append(msg)
             self.actions.append(
@@ -432,9 +409,7 @@ class MigrationReport:
             "%s.%s" % (table.schema, table.name) if table.schema else table.name
         )
         self.log_names.append("Drop Table %s" % table_name)
-        if self.can_remove_table(diff[1].schema):
-            self.raise_if_withoutautomigration()
-        else:
+        if not self.can_remove_table(diff[1].schema):
             return True
 
     def init_modify_type(self, diff):
@@ -572,7 +547,6 @@ class MigrationReport:
         }
         for diff in diffs:
             if isinstance(diff, list):
-                self.raise_if_withoutautomigration()
                 for change in diff:
                     _, _, table, column, _, _, _ = change
                     fnct = mappers.get(change[0])
@@ -1566,7 +1540,6 @@ class Migration:
     """
 
     def __init__(self, registry):
-        self.withoutautomigration = registry.withoutautomigration
         self.conn = registry.connection()
         self.loaded_namespaces = registry.loaded_namespaces
         self.loaded_views = registry.loaded_views

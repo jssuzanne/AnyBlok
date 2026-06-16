@@ -8,6 +8,8 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 from logging import DEBUG
+import warnings
+from sqlalchemy.exc import SAWarning
 
 import pytest
 
@@ -331,8 +333,10 @@ class TestModel2:
                     return (val,)
 
         registry = self.init_registry(add_in_registry)
-        assert len(registry.Test.__table_args__) == 1
-        assert registry.Test.__table_args__[0] == val
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=SAWarning, message=".*Unmanaged access.*")
+            assert len(registry.Test.__table_args__) == 1
+            assert registry.Test.__table_args__[0] == val
 
     def test_table_args_with_inherit(self):
         val = "first arg"
@@ -352,9 +356,11 @@ class TestModel2:
                     return super(Test, cls).define_table_args() + (val2,)
 
         registry = self.init_registry(add_in_registry)
-        assert len(registry.Test.__table_args__) == 2
-        assert val in registry.Test.__table_args__
-        assert val2 in registry.Test.__table_args__
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=SAWarning, message=".*Unmanaged access.*")
+            assert len(registry.Test.__table_args__) == 2
+            assert val in registry.Test.__table_args__
+            assert val2 in registry.Test.__table_args__
 
     def test_table_args_in_cls_attribute(self):
         def add_in_registry():
@@ -376,8 +382,10 @@ class TestModel2:
                     return {val: val}
 
         registry = self.init_registry(add_in_registry)
-        assert len(registry.Test.__mapper_args__) == 1
-        assert registry.Test.__mapper_args__[val] == val
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=SAWarning, message=".*Unmanaged access.*")
+            assert len(registry.Test.__mapper_args__) == 1
+            assert registry.Test.__mapper_args__[val] == val
 
     def test_mapper_args_with_inherit(self):
         val = "first arg"
@@ -399,9 +407,11 @@ class TestModel2:
                     return mapper_args
 
         registry = self.init_registry(add_in_registry)
-        assert len(registry.Test.__mapper_args__) == 2
-        assert registry.Test.__mapper_args__[val] == val
-        assert registry.Test.__mapper_args__[val2] == val2
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=SAWarning, message=".*Unmanaged access.*")
+            assert len(registry.Test.__mapper_args__) == 2
+            assert registry.Test.__mapper_args__[val] == val
+            assert registry.Test.__mapper_args__[val2] == val2
 
     def test_mapper_args_in_cls_attribute(self):
         def add_in_registry():

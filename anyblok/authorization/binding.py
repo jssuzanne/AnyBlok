@@ -60,7 +60,7 @@ class AuthorizationBinding:
             policies.update(RegistryManager.loaded_bloks[blok][cls.__name__])
 
         # for this registry entry, the list of names is irrelevant pollution:
-        del policies["registry_names"]
+        policies.pop("registry_names", None)
         registry._authz_policies = deepcopy(policies)
         for policy in registry._authz_policies.values():
             policy.registry = registry

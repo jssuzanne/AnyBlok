@@ -88,8 +88,8 @@ class BlokManager:
 
     @classmethod
     @log(logger, level="debug")
-    def reload(cls):
-        """Reload the entry points
+    def refresh(cls):
+        """Refresgh the known bloks from the entry points
 
         Empty the ``bloks`` dict and use the ``entry_points`` attribute to
         load bloks
@@ -105,6 +105,17 @@ class BlokManager:
         entry_points += cls.entry_points
         cls.unload()
         cls.load(entry_points=entry_points)
+
+    @classmethod
+    @log(logger, level="debug")
+    def reload(cls):
+        """Reload the entry points
+
+        Empty the ``bloks`` dict and use the ``entry_points`` attribute to
+        load bloks
+        :exception: BlokManagerException
+        """
+        cls.refresh()
         ImportManager.reload_all(cls.ordered_bloks)
 
     @classmethod

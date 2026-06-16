@@ -7,7 +7,7 @@
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 from logging import getLogger
-from types import FunctionType
+from warnings import warn
 from typing import Any, Dict
 
 from sqlalchemy import Column, ForeignKeyConstraint, Table
@@ -25,7 +25,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.schema import Column as SA_Column
 from sqlalchemy_utils.functions import get_class_by_table
 
-from anyblok.common import anyblok_column_prefix
+from anyblok.common import anyblok_column_prefix, CachableType
 
 from .declarations import Declarations
 from .field import Field, FieldException
@@ -277,21 +277,20 @@ class RelationShip(Field):
 
         :param registry: current registry
         """
-        InstrumentedList = registry.InstrumentedList
+        CollectionClass = registry.InstrumentedList
         if self.kwargs.get("collection_class"):
             collection_class = self.kwargs["collection_class"]
-            if isinstance(collection_class, FunctionType):
-                if (
-                    getattr(
-                        collection_class,
-                        "is_an_anyblok_instrumented_list",
-                        False,
-                    )
-                    is True
-                ):
-                    InstrumentedList = self.kwargs["collection_class"](registry)
+            if (
+                getattr(
+                    collection_class,
+                    "is_an_anyblok_instrumented_list",
+                    False,
+                )
+                is True
+            ):
+                CollectionClass = collection_class(registry)
 
-        self.kwargs["collection_class"] = InstrumentedList
+        self.kwargs["collection_class"] = CollectionClass
         self.backref_properties["collection_class"] = registry.InstrumentedList
 
     def define_backref_properties(self, registry, namespace, properties):
@@ -320,18 +319,17 @@ class RelationShip(Field):
             _backref, backref_properties = _backref
             if backref_properties.get("collection_class"):
                 collection_class = backref_properties["collection_class"]
-                if isinstance(collection_class, FunctionType):
-                    if (
-                        getattr(
-                            collection_class,
-                            "is_an_anyblok_instrumented_list",
-                            False,
-                        )
-                        is True
-                    ):
-                        backref_properties[
-                            "collection_class"
-                        ] = collection_class(registry)
+                if (
+                    getattr(
+                        collection_class,
+                        "is_an_anyblok_instrumented_list",
+                        False,
+                    )
+                    is True
+                ):
+                    backref_properties[
+                        "collection_class"
+                    ] = collection_class(registry)
 
             self.backref_properties.update(backref_properties)
 
@@ -701,7 +699,6 @@ class Many2One(RelationShip):
         collection_class = self.backref_properties.get("collection_class", None)
         if (
             collection_class
-            and isinstance(collection_class, FunctionType)
             and getattr(
                 collection_class, "is_an_anyblok_instrumented_list", False
             )
@@ -1511,24 +1508,40 @@ class One2Many(RelationShip):
         return RelationshipProperty
 
 
-def ordering_list(*args, **kwargs):
-    fnct_args = args
-    fnct_kwargs = kwargs
+class InstrumentedCollection(CachableType):
 
-    def wrap(registry, *instrumented_list_bases, **properties):
-        InstrumentedList = type(
-            "InstrumentedList",
+    sqla_collection = None
+    registry_collection_core_name = None
+
+    def __init__(self, *args, **kwargs):
+        if not self.sqla_collection:
+            raise FieldException("No SQLA collection defined")
+
+        self.fnct_args = args
+        self.fnct_kwargs = kwargs
+        self.is_an_anyblok_instrumented_list = True
+
+    def __call__(self, registry, *instrumented_list_bases, **properties):
+        CollectionClass = type(
+            self.__class__.__name__,
             (
-                OrderingList.__mro__[0],
+                self.sqla_collection.__mro__[0],
                 *instrumented_list_bases,
-                registry.InstrumentedList,
+                getattr(registry, self.registry_collection_core_name),
             ),
             properties,
         )
 
-        kw = _unsugar_count_from(**fnct_kwargs)
-        return lambda: InstrumentedList(*fnct_args, **kw)
+        kw = _unsugar_count_from(**self.fnct_kwargs)
+        return lambda: CollectionClass(*self.fnct_args, **kw)
 
-    wrap.is_an_anyblok_instrumented_list = True
 
-    return wrap
+class AnyBlokOrderingList(InstrumentedCollection):
+    sqla_collection = OrderingList
+    registry_collection_core_name = "InstrumentedList"
+
+
+
+def ordering_list(*args, **kwargs):
+    warn("ordering_list is deprecated use AnyBlokOrderingList")
+    return AnyBlokOrderingList(*args, **kwargs)

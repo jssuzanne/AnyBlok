@@ -8,7 +8,7 @@
 # obtain one at http://mozilla.org/MPL/2.0/.
 from sqlalchemy.schema import ForeignKey
 
-from anyblok.common import anyblok_column_prefix
+from anyblok.common import anyblok_column_prefix, class_to_path
 
 from .config import Configuration
 
@@ -91,7 +91,7 @@ class FakeColumn(FakeField):
 
 class FakeRelationShip(FakeField):
     def __init__(self, mapper, model_name=None, attribute_name=None):
-        self.mapper = mapper
+        self.mapper = ModelAttributeAdapter(mapper)
         self.model_name = model_name
         self.attribute_name = attribute_name
         self.info = {}
@@ -194,7 +194,7 @@ class ModelAttribute:
         try:
             column_name = self.check_column_in_first_step(registry, Model)
             Col = Model["__anyblok_structure__"]["columns"][column_name]
-            if Col.foreign_key:
+            if not isinstance(Col, FakeColumn) and Col.foreign_key:
                 return Col.foreign_key
         except ModelAttributeException:
             pass
@@ -506,6 +506,9 @@ class ModelMapper:
         self.event = event
         self.args = args
         self.kwargs = kwargs
+
+    def __str__(self):
+        return str(self.model)
 
     @classmethod
     def capable(cls, mapper):

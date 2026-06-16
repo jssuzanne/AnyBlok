@@ -11,11 +11,16 @@ from anyblok import Declarations
 from anyblok.column import Integer
 from anyblok.field import FieldException
 from anyblok.relationship import (
+    Many2Many,
     Many2One,
     One2Many,
+    One2One,
     RelationShip,
     RelationShipList,
+    ordering_list,
+    AnyBlokOrderingList,
 )
+from anyblok.common import cache_to_instance
 
 from .conftest import init_registry_with_bloks
 
@@ -35,6 +40,116 @@ class OneModel:
 class MockRegistry:
     InstrumentedList = []
 
+class Fake:
+    __declaration_type__ = 'Model'
+    __tablename__ = "test"
+    __registry_name__ = "Model.Fake"
+
+setattr(Model, 'Fake', Fake)
+
+
+RELATIONSHIPS = [
+    pytest.param(
+        (Many2One, dict(model=Model.Fake, remote_columns=["id"], column_names=['blok_id'], on2many="other", nullable=False)),
+        id="Many2One1",
+    ),
+    pytest.param(
+        (Many2One, dict(model=Model.Fake, remote_columns="id", on2many=["other", dict(order_by="ModelFake.name", collection_class=ordering_list('name'))], nullable=False)),
+        id="Many2One2",
+    ),
+    pytest.param(
+        (Many2One, dict(model=Model.Fake)),
+        id="Many2One3",
+    ),
+    pytest.param(
+        (Many2One, dict(model="Model.Fake")),
+        id="Many2One4",
+    ),
+    pytest.param(
+        (
+            Many2Many,
+            dict(
+                model=Model.Fake,
+                join_table="join_addresses_by_persons",
+                remote_columns=["id"],
+                local_columns=["name"],
+                m2m_remote_columns=["a_id"],
+                m2m_local_columns=["p_name"],
+                many2many="persons",
+            )
+        ),
+        id="Many2Many1",
+    ),
+    pytest.param(
+        (
+            Many2Many,
+            dict(
+                model=Model.Fake,
+                join_table="join_addresses_by_persons",
+                remote_columns="id",
+                local_columns="name",
+                m2m_remote_columns="a_id",
+                m2m_local_columns="p_name",
+                schema="test_db_m2m_schema",
+                many2many=(
+                    "persons",
+                    dict(
+                        order_by="ModelPerson.name",
+                        collection_class=AnyBlokOrderingList("name"),
+                    ),
+                ),
+            )
+        ),
+        id="Many2Many2",
+    ),
+    pytest.param(
+        (Many2Many, dict(model=Model.Fake)),
+        id="Many2Many2",
+    ),
+    pytest.param(
+        (
+            One2Many,
+            dict(
+                model=Model.Fake,
+                remote_columns="address_id",
+                primaryjoin="primaryjoin",
+                many2one="address",
+            )
+        ),
+        id="One2Many1",
+    ),
+    pytest.param(
+        (
+            One2Many,
+            dict(
+                model=Model.Fake,
+                remote_columns="address_id",
+                primaryjoin="primaryjoin",
+                many2one="address",
+                order_by="ModelPerson.name",
+                collection_class=AnyBlokOrderingList("name"),
+            )
+        ),
+        id="One2Many2",
+    ),
+    pytest.param(
+        (
+            One2One,
+            dict(
+                model=Model.Fake,
+                column_names=("test_id", "test_id2"),
+                backref="address",
+            )
+        ),
+        id="One2One",
+    ),
+]
+
+
+@pytest.fixture(params=RELATIONSHIPS)
+def relationship_definition(request):
+    return request.param
+
 
 class TestRelationShip:
     def test_forbid_instance(self):
@@ -45,6 +160,14 @@ class TestRelationShip:
         OneRelationShip(model=OneModel)
         with pytest.raises(FieldException):
             OneRelationShip()
+
+    def test_cache(self, relationship_definition):
+        field, kwargs = relationship_definition
+        f1 = field(**kwargs)
+        cache1 = f1.to_cache()
+        f2 = cache_to_instance(cache1)
+        cache2 = f2.to_cache()
+        assert cache1 == cache2
 
 
 class List(RelationShipList, list):

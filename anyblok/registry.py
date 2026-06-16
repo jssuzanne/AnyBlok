@@ -7,7 +7,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public License,
 # v. 2.0. If a copy of the MPL was not distributed with this file,You can
 # obtain one at http://mozilla.org/MPL/2.0/.
+import warnings
+import pickle
 from logging import getLogger
+from pathlib import Path
+from copy import deepcopy
 
 from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.exc import (
@@ -21,7 +25,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.session import close_all_sessions
 from sqlalchemy_utils.functions import database_exists
 
-from anyblok.common import anyblok_column_prefix, naming_convention
+from anyblok.common import anyblok_column_prefix, naming_convention, class_to_path, path_to_class
 
 from .authorization.query import QUERY_WITH_NO_RESULTS, PostFilteredQuery
 from .blok import BlokManager
@@ -90,6 +94,8 @@ class RegistryManager:
     callback_assemble_entries = {}
     callback_initialize_entries = {}
     callback_unload_entries = {}
+    callback_to_cache = {}
+    callback_from_cache = {}
     registries = {}
     mixins = {}
     RegistryClass = None
@@ -150,7 +156,7 @@ class RegistryManager:
 
     @classmethod
     def get(
-        cls, db_name, loadwithoutmigration=False, log_repeat=True, **kwargs
+        cls, db_name, log_repeat=True, **kwargs
     ):
         """Return an existing Registry
 
@@ -158,27 +164,17 @@ class RegistryManager:
          to registries dict
 
         :param db_name:the name of the database linked to this registry
-        :param loadwithoutmigration:if True, registry is created without
-                                      any migration of the database
         :param log_repeat:if False, when the registry is load whitout
                             migration, the warning is not logged
         :rtype:``Registry``
         """
         EnvironmentManager.set("db_name", db_name)
         if db_name in cls.registries:
-            if loadwithoutmigration and log_repeat:
-                logger.warning(
-                    "Ignoring loadwithoutmigration=True for database %r "
-                    "because its registry is already loaded",
-                    db_name,
-                )
             return cls.registries[db_name]
 
         logger.info("Loading registry for database %r", db_name)
         RegistryClass = cls.build_registry_class()
-        registry = RegistryClass(
-            db_name, loadwithoutmigration=loadwithoutmigration, **kwargs
-        )
+        registry = RegistryClass(db_name, **kwargs)
         cls.registries[db_name] = registry
         return registry
 
@@ -236,6 +232,8 @@ class RegistryManager:
         pre_assemble_callback=None,
         assemble_callback=None,
         initialize_callback=None,
+        to_cache=None,
+        from_cache=None,
     ):
         """Add new entry in the declared entries
 
@@ -277,6 +275,13 @@ class RegistryManager:
 
             if initialize_callback:
                 cls.callback_initialize_entries[entry] = initialize_callback
+
+            if to_cache:
+                cls.callback_to_cache[entry] = to_cache
+
+            if from_cache:
+                cls.callback_from_cache[entry] = from_cache
+
 
     @classmethod
     def declare_unload_callback(cls, entry, unload_callback):
@@ -455,6 +460,17 @@ class RegistryManager:
         if cls.has_blok_property(property_):
             del cls.loaded_bloks[blok]["properties"][property_]
 
+    @classmethod
+    def clear_cache(cls, db_name):
+        cache_path = Path(
+            Configuration.get('cache_assembly_dir', '.')) / f"{db_name}.bin"
+    
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+            except OSError as e:
+                warnings.warn(f"Impossible de supprimer le cache : {e}")
+
 
 class Registry:
     """Define one registry
@@ -465,11 +481,8 @@ class Registry:
         registry = Registry('My database')
     """
 
-    def __init__(
-        self, db_name, loadwithoutmigration=False, unittest=False, **kwargs
-    ):
+    def __init__(self, db_name, unittest=False, **kwargs):
         self.db_name = db_name
-        self.loadwithoutmigration = loadwithoutmigration
         self.unittest = unittest
         self.additional_setting = kwargs
         self.init_engine(db_name=db_name)
@@ -479,12 +492,27 @@ class Registry:
             tuple(),
             {"anyblok": self, "Env": EnvironmentManager},
         )
-        self.withoutautomigration = Configuration.get("withoutautomigration")
         self.ini_var()
         self.Session = None
         self.blok_list_is_loaded = False
-        self.pre_assemble_entries()
-        self.load()
+        if self.use_cache_assembly() and not unittest:
+            self.load_with_cache()
+        else:
+            self.pre_assemble_entries()
+            self.load_without_cache()
+            if self.create_cache() and not unittest:
+                self.load_with_cache()
+
+        self.call_load_on_the_blok()
+
+    def use_cache_assembly(self):
+        use_cache_assembly = bool(Configuration.get('use_cache_assembly', True))
+        if not use_cache_assembly:
+            return False
+
+        cache_path = Path(
+            Configuration.get('cache_assembly_dir', '.')) / f"{self.db_name}.bin"
+        return cache_path.exists()
 
     def init_bind(self):
         """Initialize the bind"""
@@ -683,12 +711,6 @@ class Registry:
         for blok in BlokManager.auto_install:
             if blok not in (toinstall + loaded):
                 toinstall.append(blok)
-
-        if toinstall and self.withoutautomigration:
-            raise RegistryManagerException(  # pragma:no cover
-                "Install modules %r is forbidden with no auto migration "
-                "mode" % toinstall
-            )
 
         return toinstall
 
@@ -966,7 +988,7 @@ class Registry:
     def final_namespace(self, parent, child, base):
         if hasattr(parent, child) and getattr(parent, child):
             other_base = self.get_namespace(parent, child)
-            other_base = other_base.children_namespaces.copy()
+            other_base = getattr(other_base, 'children_namespaces', {}).copy()
             for ns, cns in other_base.items():
                 setattr(base, ns, cns)
 
@@ -1015,10 +1037,9 @@ class Registry:
         if self.Session is None or self.must_recreate_session_factory():
             bind = self.bind
             if self.Session:
-                if not self.withoutautomigration:
-                    # this is the only case to use commit in the construction
-                    # of the registry
-                    self.commit()
+                # this is the only case to use commit in the construction
+                # of the registry
+                self.commit()
                 # remove all existing instance to create a new instance
                 # because the instance are cached
                 self.Session.remove()
@@ -1046,8 +1067,21 @@ class Registry:
 
         return False
 
+    def create_declarative_base(self):
+        self.declarativebase = declarative_base(
+            metadata=MetaData(naming_convention=naming_convention),
+            class_registry=dict(registry=self),
+        )
+
+    def create_instrumentedlist_base(self):
+        instrumentedlist_base = [] + self.loaded_cores["InstrumentedList"]
+        instrumentedlist_base += [list]
+        self.InstrumentedList = type(
+            "InstrumentedList", tuple(instrumentedlist_base), {}
+        )
+
     @log(logger, level="debug")
-    def load(self):
+    def load_without_cache(self):
         """Load all the namespaces of the registry
 
         Create all the table, make the shema migration
@@ -1056,31 +1090,18 @@ class Registry:
         mustreload = False
         blok2install = None
         try:
-            self.declarativebase = declarative_base(
-                metadata=MetaData(naming_convention=naming_convention),
-                class_registry=dict(registry=self),
-            )
+            self.create_declarative_base()
             toload = self.get_bloks_to_load()
             toinstall = self.get_bloks_to_install(toload)
-            if (
-                not self.loadwithoutmigration
-                and self.update_to_install_blok_dependencies_state(toinstall)
-            ):
+            if (self.update_to_install_blok_dependencies_state(toinstall)):
                 toinstall = self.get_bloks_to_install(toload)
-            if self.loadwithoutmigration and not toload and toinstall:
-                logger.warning("Impossible to use loadwithoumigration")
-                self.loadwithoutmigration = False  # pragma:no cover
 
             self.load_bloks(toload, False, toload)
-            if toinstall and not self.loadwithoutmigration:
+            if toinstall:
                 blok2install = toinstall[0]
                 self.load_blok(blok2install, True, toload)
 
-            instrumentedlist_base = [] + self.loaded_cores["InstrumentedList"]
-            instrumentedlist_base += [list]
-            self.InstrumentedList = type(
-                "InstrumentedList", tuple(instrumentedlist_base), {}
-            )
+            self.create_instrumentedlist_base()
             self.assemble_entries()
             self.create_query_factory()
             self.create_session_factory()
@@ -1095,22 +1116,92 @@ class Registry:
 
         if len(toinstall) > 1 or mustreload:
             self.reload()
-        else:
-            blok_names = self.get_bloks_by_states("installed")
-            for blok_name in blok_names:
-                blok_cls = BlokManager.get(blok_name)
-                if blok_cls is None:
-                    logger.warning(
-                        "load(): class of Blok %r not found, " "Blok can't be loaded",
-                        blok_name,
-                    )
-                    continue  # pragma: no cover
 
-                logger.info("Loading Blok %r", blok_name)
-                blok_cls(self).load()
-                logger.debug("Succesfully loaded Blok %r", blok_name)
+    def create_cache(self):
+        cache_path = Configuration.get('cache_assembly_dir')
+        if not cache_path:
+            return False
 
-        self.loadwithoutmigration = False
+        cache = {
+            'ordered_loaded_bloks': self.ordered_loaded_bloks,
+            'cores': {},
+            'ordered_bloks': BlokManager.ordered_bloks,
+            'bloks': {},
+        }
+        for blokname, blok in BlokManager.bloks.items():
+            cache['bloks'][blokname] = class_to_path(blok)
+
+        for core, bases in self.loaded_cores.items():
+            if core in ('Base', 'SqlBase', 'SqlViewBase'):
+                continue
+
+            cache['cores'][core] = [class_to_path(x) for x in bases]
+
+        for entry in RegistryManager.declared_entries:
+            if entry in RegistryManager.callback_to_cache:
+                cache.update(RegistryManager.callback_to_cache[entry](self))
+
+        from pprint import pprint
+        pprint(cache)
+        cache_path = Path(cache_path)
+        cache_file = cache_path / f"{self.db_name}.bin"
+
+        if not cache_path.exists():
+            cache_path.mkdir()
+
+        with cache_file.open("wb") as f:
+            pickle.dump(cache, f, protocol=-1)
+
+        return True
+
+    @log(logger, level="debug")
+    def load_with_cache(self):
+        """Load all the namespaces of the registry from the cache
+
+        Create all the table, make the shema migration
+        Update Blok, Model, Column rows
+        """
+        self.create_declarative_base()
+        cache_path = Path(Configuration.get('cache_assembly_dir', '.'))
+        cache_file = cache_path / f"{self.db_name}.bin"
+
+        with cache_file.open("rb") as f:
+            cache = pickle.load(f)
+
+        for blok in cache['ordered_bloks']:
+            if blok not in BlokManager.bloks:
+                BlokManager.set(blok, path_to_class(cache['bloks'][blok]))
+
+        try:
+            blok_name = f"db_{self.db_name}"
+            EnvironmentManager.set("current_blok", blok_name)
+            RegistryManager.init_blok(blok_name)
+            for core, bases in cache['cores'].items():
+                self.loaded_cores[core] = [path_to_class(x) for x in bases]
+        finally:
+            EnvironmentManager.set("current_blok", None)
+
+        self.create_instrumentedlist_base()
+        for entry in RegistryManager.declared_entries:
+            if entry in RegistryManager.callback_to_cache:
+                RegistryManager.callback_from_cache[entry](self, cache)
+        self.create_query_factory()
+        self.create_session_factory()
+
+    def call_load_on_the_blok(self):
+        blok_names = self.get_bloks_by_states("installed")
+        for blok_name in blok_names:
+            blok_cls = BlokManager.get(blok_name)
+            if blok_cls is None:
+                logger.warning(
+                    "load(): class of Blok %r not found, " "Blok can't be loaded",
+                    blok_name,
+                )
+                continue  # pragma: no cover
+
+            logger.info("Loading Blok %r", blok_name)
+            blok_cls(self).load()
+            logger.debug("Succesfully loaded Blok %r", blok_name)
 
     def apply_session_events(self):
         """Add session events
@@ -1160,10 +1251,7 @@ class Registry:
         # new connection, this new connection have not acknowedge of the
         # data in the session.connection, and risk of bad lock on the
         # tables
-        if self.loadwithoutmigration:
-            return
-
-        if not self.withoutautomigration and blok2install == "anyblok-core":
+        if blok2install == "anyblok-core":
             self.declarativebase.metadata.tables["system_blok"].create(
                 bind=self.connection(), checkfirst=True
             )
@@ -1189,8 +1277,7 @@ class Registry:
                 b.pre_migration(parsed_version)
 
             self.migration.auto_upgrade_database(schema_only=True)
-            if not self.withoutautomigration:
-                self.declarativebase.metadata.create_all(self.connection())
+            self.declarativebase.metadata.create_all(self.connection())
 
             self.migration.auto_upgrade_database()
 
@@ -1496,7 +1583,7 @@ class Registry:
         self.remove_sqlalchemy_known_event()
         self.clean_model()
         self.ini_var()
-        self.load()
+        self.load_without_cache()
 
     def get_bloks(self, blok, filter_states, filter_modes):
         Blok = self.System.Blok
@@ -1572,7 +1659,7 @@ class Registry:
         )
 
     @log(logger, level="debug", withargs=True)
-    def upgrade(self, install=None, update=None, uninstall=None):
+    def upgrade(self, install=None, update=None, uninstall=None, refresh_blok=False):
         """Upgrade the current registry
 
         :param install:list of the blok to install
@@ -1634,53 +1721,20 @@ class Registry:
 
             return wrap
 
+        self.pre_assemble_entries()
+        RegistryManager.clear_cache(self.db_name)
+        if refresh_blok:
+            BlokManager.refresh()
+
         upgrade_state_bloks("touninstall")(uninstall or [])
         upgrade_state_bloks("toinstall")(install or [])
         upgrade_state_bloks("toupdate")(update or [])
         self.reload()
         self.expire_all()
+        if self.create_cache() and not self.unittest:
+            self.load_with_cache()
 
-    def get_fingerprint(self):
-        """Generate a SHA256 fingerprint of the current environment
-        (loaded Bloks + versions) to decide if the registry structure cache
-        is still valid.
-        """
-        import hashlib
-
-        hasher = hashlib.sha256()
-        for blok_name in sorted(self.ordered_loaded_bloks):
-            hasher.update(blok_name.encode("utf-8"))
-            try:
-                b = BlokManager.get(blok_name)
-                if hasattr(b, "version") and b.version:
-                    hasher.update(b.version.encode("utf-8"))
-            except Exception:
-                pass
-
-        # Include loaded model names to avoid collision during testing
-        model_names = self.loaded_registries.get("Model_names", [])
-        for model_name in sorted(model_names):
-            hasher.update(model_name.encode("utf-8"))
-
-        return hasher.hexdigest()
-
-    def clear_cache(self):
-        """Clear the persistent registry cache from disk and the database."""
-        import os
-
-        cache_file = ".anyblok_cache"
-        if os.path.exists(cache_file):
-            try:
-                os.remove(cache_file)
-            except Exception:
-                pass
-        try:
-            self.execute(
-                "DELETE FROM system_parameter WHERE key = 'anyblok.registry.fingerprint'"
-            )
-            self.commit()
-        except Exception:
-            self.rollback()
+        self.call_load_on_the_blok()
 
     @log(logger, level="debug")
     def update_blok_list(self):

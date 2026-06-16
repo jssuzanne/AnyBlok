@@ -75,6 +75,7 @@ from anyblok.column import (
     model_validator_is_sql,
     model_validator_is_view,
 )
+from anyblok.common import cache_to_instance
 from anyblok.config import Configuration
 from anyblok.field import FieldException
 from anyblok.mapper import ModelAttribute
@@ -299,6 +300,17 @@ class TestColumn:
         column = OneColumn()
         column.get_sqlalchemy_mapping(None, None, "a_column", None)
         assert column.label == "A column"
+
+    def test_cache(self, column_definition):
+        column, _, kwargs = column_definition
+        col = column(**kwargs)
+        cache1 = col.to_cache()
+        col2 = cache_to_instance(cache1)
+        cache2 = col2.to_cache()
+        assert cache1 == cache2
+        assert col.args == col2.args
+        assert col.kwargs == col2.kwargs
+        assert col.info == col2.info
 
 
 def simple_column(ColumnType=None, **kwargs):

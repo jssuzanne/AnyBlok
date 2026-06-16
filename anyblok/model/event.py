@@ -24,7 +24,9 @@ class EventPlugin(ModelPluginBase):
     def before_model_construction(self, properties):
         if properties['__anyblok_structure__']["events"]:
             events = self.registry.events
-            for mapper, attr in properties['__anyblok_structure__']["events"]:
+            for event_ in properties['__anyblok_structure__']["events"]:
+                mapper = event_.mapper
+                attr = event_.attribute
                 model = mapper.model.model_name
                 event = mapper.event
 
@@ -40,7 +42,9 @@ class SQLAlchemyEventPlugin(ModelPluginBase):
 
     def before_model_construction(self, properties):
         namespace = properties['__registry_name__']
-        for mapper, attr in properties['__anyblok_structure__']["sqlalchemy_events"]:
+        for event_ in properties['__anyblok_structure__']["sqlalchemy_events"]:
+            mapper = event_.mapper
+            attr = event_.attribute
             self.registry._sqlalchemy_known_events.append(
                 (
                     mapper,

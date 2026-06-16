@@ -40,6 +40,7 @@ def init_registry_with_bloks(bloks, function, **kwargs):
     blok_test = BlokManager.bloks.pop(anyblok_test_name)
     ImportManager.modules.pop(anyblok_test_name, None)
     RegistryManager.loaded_bloks.pop(anyblok_test_name, None)
+    Configuration.set('use_cache_assembly', False)
 
     properties = {}
     if function is not None:

@@ -18,8 +18,10 @@ from texttable import Texttable
 from anyblok import Declarations
 from anyblok.common import (
     anyblok_column_prefix,
-    return_list,
     merge_structure,
+    class_to_path,
+    path_to_class,
+    cache_to_instance,
 )
 from anyblok.mapper import ModelAttribute, FakeField, format_schema
 from anyblok.registry import RegistryManager
@@ -27,6 +29,7 @@ from anyblok.registry import RegistryManager
 from .exceptions import ModelException
 from .factory import ModelFactory
 from .plugins import get_model_plugins
+from ..environment import EnvironmentManager
 
 
 def has_sqlalchemy_fields(base):
@@ -96,16 +99,18 @@ class ModelProxy:
         object.__setattr__(self, 'children_namespaces', {})
         object.__setattr__(self, 'parent', None)
         object.__setattr__(self, 'Model', None)
+        object.__setattr__(self, 'is_loading', False)
 
     def __repr__(self):
         return f"<Proxy ({self.namespace})/>"
 
     def load_model(self, load_dependencies=True):
+        object.__setattr__(self, 'is_loading', True)
         if self.Model is None:
             first_step = self.registry.loaded_namespaces_first_step[self.namespace]
             for inherit in first_step['__inherits__']:
                 _Model = self.registry.get(inherit)
-                if isinstance(_Model, ModelProxy):
+                if isinstance(_Model, ModelProxy) and not _Model.is_loading:
                     _Model.load_model()
 
             for relationship in first_step['__anyblok_structure__']['relationships'].values():
@@ -113,12 +118,9 @@ class ModelProxy:
                     model = relationship.mapper.model_name
                 else:
                     model = relationship.model.model_name
-
-                if model == self.namespace:
-                    continue
-
+            
                 _Model = self.registry.get(model)
-                if isinstance(_Model, ModelProxy):
+                if isinstance(_Model, ModelProxy) and not _Model.is_loading:
                     _Model.load_model()
 
             RealModel = Model.load_namespace_second_step(self.registry, self.namespace)
@@ -147,12 +149,15 @@ class ModelProxy:
     def __call__(self, *args, **kwargs):
         RealModel = self.load_model()
         return RealModel(*args, **kwargs)
+
     
 @Declarations.add_declaration_type(
     isAnEntry=True,
     pre_assemble="pre_assemble_callback",
     assemble="assemble_callback",
     initialize="initialize_callback",
+    to_cache="to_cache",
+    from_cache="from_cache",
 )
 class Model:
     """The Model class is used to define or inherit an SQL table.
@@ -214,6 +219,7 @@ class Model:
                 func(*args, **kwargs)
 
         registry.call_plugins = call_plugins
+        registry.plugins_by = plugins_by
 
     @classmethod
     def register(self, parent, name, cls_, **kwargs):
@@ -427,7 +433,15 @@ class Model:
         bases = []
         for base in properties["__anyblok_structure__"]["bases"][::-1]:
             if isinstance(base, str):
-                if base in registry.loaded_registries["Model_names"]:
+                if ':' in base:
+                    try:
+                        EnvironmentManager.set("current_blok", f"db_{registry.db_name}")
+                        bases.insert(0, path_to_class(base))
+                    finally:
+                        EnvironmentManager.set("current_blok", None)
+                elif base == 'DeclarativeBase':
+                    bases.insert(0, registry.declarativebase)
+                elif base in registry.loaded_registries["Model_names"]:
                     bs = cls.load_namespace_second_step(registry, base)
                     bases.insert(0, bs)
                 else:
@@ -503,7 +517,7 @@ class Model:
         if not isinstance(pmodel, ModelProxy):
             return pmodel
 
-        first_step = registry.loaded_namespaces_first_step[namespace]
+        first_step = registry.loaded_namespaces_first_step[namespace].copy()
         tablename = first_step.get("__tablename__")
         modelname = namespace.replace(".", "")
         registry.call_plugins("init", first_step)
@@ -555,9 +569,8 @@ class Model:
             if properties.get('auto_load'):
                 registry.auto_load.append(namespace)
 
-        if not registry.loadwithoutmigration:
-            for namespace in registry.loaded_registries["Model_names"]:
-                cls.load_namespace_second_step(registry, namespace)
+        for namespace in registry.loaded_registries["Model_names"]:
+            cls.load_namespace_second_step(registry, namespace)
 
 
     @classmethod
@@ -572,13 +585,6 @@ class Model:
 
         :param registry: registry to update
         """
-        if registry.loadwithoutmigration:
-            for namespace in registry.auto_load:
-                Model = registry.get(namespace)
-                Model.initialize_model()
-
-            return False
-
         for Model in registry.loaded_namespaces.values():
             Model.initialize_model()
             Model.clear_all_model_caches()
@@ -591,3 +597,139 @@ class Model:
         res = Blok.apply_state(*registry.ordered_loaded_bloks)
 
         return res
+
+    @classmethod
+    def to_cache(cls, registry):
+        cache = {
+            'auto_load': registry.auto_load,
+            'ordered_models': registry.loaded_registries['Model_names'],
+            'models': {},
+            'plugins': {},
+        }
+        for plugin, funcs in registry.plugins_by.items():
+            cache['plugins'][plugin] = [class_to_path(x.__self__.__class__) for x in funcs]
+
+        for model in cache['ordered_models']:
+            fs = registry.loaded_namespaces_first_step[model]
+            model_cache = {
+                x: fs[x]
+                for x in ('__db_schema__', '__inherits__', '__registry_name__', '__tablename__')
+                if x in fs
+            }
+            model_cache.update({
+                "loaded_columns": [],
+                "hybrid_property_columns": [],
+                "loaded_fields": {},
+            })
+            model_cache['__model_factory__'] = class_to_path(fs['__model_factory__'].__class__)
+            model_cache['structure'] = {
+                'bases': [],
+            }
+            for key, values in fs['__anyblok_structure__'].items():
+                if key == 'bases':
+                    for base in values:
+                        if base is registry.declarativebase:
+                            model_cache['structure']['bases'].append('DeclarativeBase')
+                        else:
+                            model_cache['structure']['bases'].append(class_to_path(base))
+                elif isinstance(values, set):
+                    model_cache['structure'][key] = set(
+                    )
+                elif isinstance(values, dict):
+                    model_cache['structure'][key] = {
+                        k: v.to_cache()
+                        for k, v in values.items()
+                        if hasattr(v, 'to_cache')
+                    }
+                elif isinstance(values, bool):
+                    model_cache['structure'][key] = values
+
+            cache['models'][model] = model_cache
+
+        return cache
+
+    @classmethod
+    def from_cache(cls, registry, cache):
+        plugins_by = {}
+        plugins_ = {}
+        
+        def get_plugin(name):
+            if name not in plugins_:
+                plugins_[name] = path_to_class(name)(registry)
+        
+            return plugins_[name]
+        
+        for func, plugins in cache['plugins'].items():
+            plugins_by[func] = [
+                getattr(get_plugin(x), func)
+                for x in plugins
+            ]
+        
+        def call_plugins(method, *args, **kwargs):
+            """call the method on each plugin"""
+            for func in plugins_by.get(method, []):
+                func(*args, **kwargs)
+        
+        registry.call_plugins = call_plugins
+        registry.plugins_by = plugins_by
+
+        registry.loaded_namespaces_first_step = cache['models']
+        for namespace in cache['ordered_models']:
+            cls.add_in_declaration(registry, namespace)
+            first_step = cache['models'][namespace]
+            cls.model_from_cache(registry, first_step)
+            model = ModelProxy(registry, namespace)
+            registry.add_in_registry(namespace, model)
+            registry.loaded_namespaces[namespace] = model
+            if namespace in cache['auto_load']:
+                model.load_model()
+
+    @classmethod
+    def add_in_declaration(cls, registry, namespace):
+        current_node = Declarations.Model
+        for part in namespace.split('.')[1:]:
+            if not hasattr(current_node, part):
+                new_node = type(part, (), {
+                    "__tablename__": registry.loaded_namespaces_first_step[namespace].get('__tablename__', namespace[1:].replace('.', '_')),
+                    "__registry_name__": namespace,
+                    "use": lambda x: ModelAttribute(namespace, x),
+                    "__declaration_type__": 'Model',
+                })
+                setattr(current_node, part, new_node)
+
+            current_node = getattr(current_node, part)
+
+    @classmethod
+    def model_from_cache(cls, registry, first_step):
+        if not isinstance(first_step['__model_factory__'], str):
+            return
+
+        first_step['__model_factory__'] = path_to_class(first_step['__model_factory__'])(registry)
+        structure = first_step.pop('structure')
+        try:
+            blok_name = f"db_{registry.db_name}"
+            EnvironmentManager.set("current_blok", blok_name)
+
+            for key, values in structure.items():
+                if key == 'bases':
+                    continue
+                    bases = []
+                    for base in values[::-1]:
+                        if base == 'DeclarativeBase': 
+                            bases.insert(0, registry.declarative_base)
+                        else:
+                            bases.insert(0, path_to_class(base))
+                    structure[key] = bases
+                elif isinstance(values, set):
+                    structure[key] = set(cache_to_instance(x) for x in values)
+                elif isinstance(values, dict):
+                    structure[key] = {
+                        k: cache_to_instance(v) for k, v in values.items()
+                    }
+                else:
+                    structure[key] = values
+
+        finally:
+            EnvironmentManager.set("current_blok", None)
+
+        first_step['__anyblok_structure__'] = structure

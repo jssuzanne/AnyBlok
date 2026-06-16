@@ -33,6 +33,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    return
     if config.getoption("--load-without-migration"):
         Configuration.set('withoutautomigration', True)
 
@@ -47,7 +48,6 @@ def init_session(request, configuration_loaded):
     # Init registry
     additional_setting = {
         "unittest": True,
-        "loadwithoutmigration": Configuration.get('withoutautomigration'),
     }
 
     if len(BlokManager.list()) == 0:

@@ -43,7 +43,7 @@ class MixinType:
         RegistryManager.remove_in_register(cls_)
 
 
-@Declarations.add_declaration_type(isAnEntry=True)
+@Declarations.add_declaration_type(isAnEntry=True, to_cache="to_cache", from_cache="from_cache")
 class Mixin(MixinType):
     """The Mixin class are used to define a behaviours on models:
 
@@ -61,3 +61,15 @@ class Mixin(MixinType):
     autodoc_anyblok_bases = True
 
     autodoc_anyblok_fields = True
+
+    @classmethod
+    def to_cache(cls, registry):
+        return {
+            'Mixin_names': registry.loaded_registries['Mixin_names'],
+        }
+
+    @classmethod
+    def from_cache(cls, registry, cache):
+        for mixin in cache['Mixin_names']:
+            name = mixin.split('.')[-1]
+            setattr(cls, name, type(name, (), {}))

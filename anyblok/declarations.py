@@ -7,7 +7,7 @@
 # obtain one at http://mozilla.org/MPL/2.0/.
 from warnings import warn
 
-from .common import add_autodocs, merge_structure
+from .common import add_autodocs, merge_structure, class_to_path, path_to_class
 from .mapper import MapperAdapter, ModelMapper
 
 
@@ -122,6 +122,8 @@ class Declarations:
         pre_assemble=None,
         assemble=None,
         initialize=None,
+        to_cache=None,
+        from_cache=None,
         unload=None,
     ):
         """Add a declaration type
@@ -151,8 +153,11 @@ class Declarations:
             setattr(cls, name, self)
 
             if isAnEntry:
-                pre_assemble_callback = assemble_callback = None
+                pre_assemble_callback = None
+                assemble_callback = None
                 initialize_callback = None
+                to_cache_callback = None
+                from_cache_callback = None
                 if pre_assemble and hasattr(self, pre_assemble):
                     pre_assemble_callback = getattr(self, pre_assemble)
 
@@ -162,11 +167,19 @@ class Declarations:
                 if initialize and hasattr(self, initialize):
                     initialize_callback = getattr(self, initialize)
 
+                if to_cache and hasattr(self, to_cache):
+                    to_cache_callback = getattr(self, to_cache)
+
+                if from_cache and hasattr(self, from_cache):
+                    from_cache_callback = getattr(self, from_cache)
+
                 RegistryManager.declare_entry(
                     name,
                     pre_assemble_callback=pre_assemble_callback,
                     assemble_callback=assemble_callback,
                     initialize_callback=initialize_callback,
+                    to_cache=to_cache_callback,
+                    from_cache=from_cache_callback,
                 )
 
             # All declaration type can need to be unload declarated values
@@ -213,6 +226,13 @@ class Cache:
     def __set_name__(self, owner, name):
         Declarations.init_pre_structure(owner)
         owner.__anyblok_pre_structure__["caches"][name] = self
+
+    def to_cache(self):
+        return (
+            class_to_path(self.__class__),
+            [],
+            [['size', self.size]],
+        )
 
 
 def cache(size=128):
@@ -297,13 +317,24 @@ class Listen:
 
     def __set_name__(self, owner, name):
         Declarations.init_pre_structure(owner)
+        self.attribute = name
         if (
             isinstance(self.mapper, ModelMapper)
             and self.mapper.event not in self.sqlalchemy_known_events
         ):
-            owner.__anyblok_pre_structure__["events"].add((self.mapper, name))
+            owner.__anyblok_pre_structure__["events"].add(self)
         else:
-            owner.__anyblok_pre_structure__["sqlalchemy_events"].add((self.mapper, name))
+            owner.__anyblok_pre_structure__["sqlalchemy_events"].add(self)
+
+    def to_cache(self):
+        return (
+            class_to_path(self.__class__),
+            [
+                str(self.mapper),
+                self.attribute,
+            ],
+            [],
+        )
 
 
 def listen(*args, **kwargs):

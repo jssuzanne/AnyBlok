@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy.sql.naming import ConventionDict
+from pytz.tzinfo import BaseTzInfo
 
 """Define the prefix for the mapper attribute of the column"""
 anyblok_column_prefix = "ANYBLOK_FIELD_"
@@ -144,7 +145,7 @@ def return_list(entry):
 
 def merge_structure(into_structure, from_structure):
     for key, values in from_structure.items():
-        if key == 'bases': 
+        if key == 'bases':
             if key not in into_structure:
                 into_structure[key] = []
 
@@ -166,3 +167,100 @@ def merge_structure(into_structure, from_structure):
                 into_structure[key] = False
 
             into_structure[key] = into_structure[key] or from_structure[key]
+
+
+def class_to_path(cls):
+    return f"{cls.__module__}:{cls.__name__}"
+
+
+def path_to_class(import_definition):
+    if not isinstance(import_definition, str):
+        return import_definition
+
+    import_path, import_name = import_definition.split(":")
+    module = __import__(import_path, fromlist=[import_name])
+    if hasattr(module, import_name):
+        return getattr(module, import_name)
+
+    raise ImportError("%s does not exist in %s" % (import_name, import_path))
+
+
+def resolve_cache(elements):
+    if isinstance(elements, list | tuple):
+        elements = [resolve_cache(x) for x in elements]
+        if len(elements) == 2 and isinstance(elements[0], str):
+            mapping = {
+                'path_to_class': path_to_class,
+                'cache_to_instance': cache_to_instance,
+            }
+            func = mapping.get(elements[0], None)
+            if func:
+                return func(elements[1])
+
+        return elements
+
+    if isinstance(elements, dict):
+        return {
+            k: resolve_cache(v)
+            for k, v in elements.items()
+        }
+
+    return elements
+
+
+def adapt_to_cache(obj):
+    """
+    Transforme récursivement un objet complexe en dictionnaire JSON-compatible.
+    """
+    from anyblok.mapper import ModelAttribute, ModelRepr
+
+    if isinstance(obj, ModelAttribute | ModelRepr):
+        return str(obj)
+
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    
+    if isinstance(obj, (list, tuple)):
+        return [adapt_to_cache(item) for item in obj]
+    
+    if isinstance(obj, dict):
+        return {str(k): adapt_to_cache(v) for k, v in obj.items()}
+    
+    if isinstance(obj, type):
+        if hasattr(obj, '__registry_name__'):
+            return obj.__registry_name__
+
+        return ["path_to_class", class_to_path(obj)]
+
+    if isinstance(obj, BaseTzInfo):
+        return str(obj)
+
+    if hasattr(obj, 'to_cache'):
+        return ["cache_to_instance", obj.to_cache()]
+    
+    if hasattr(obj, "__dict__"):
+        return adapt_to_cache(obj.__dict__)
+        
+    return str(obj)
+
+
+def cache_to_instance(cache):
+    args = resolve_cache(cache[1])
+    kwargs = resolve_cache(dict(cache[2]))
+    return path_to_class(cache[0])(*args, **kwargs)
+
+
+class CachableType:
+
+    def to_cache(self):
+        return [
+            class_to_path(self.__class__),
+            adapt_to_cache(self.__called_args),
+            list(adapt_to_cache(self.__called_kwargs).items())
+        ]
+
+    def __new__(cls, *args, **kwargs):
+        self = super().__new__(cls)
+        self.__called_args = args
+        self.__called_kwargs = kwargs
+        return self

@@ -15,6 +15,7 @@ from anyblok.field import Field, FieldException, Function, JsonRelated
 from anyblok.testing import sgdb_in
 
 from .conftest import init_registry
+from anyblok.common import cache_to_instance
 
 Model = Declarations.Model
 register = Declarations.register
@@ -22,6 +23,23 @@ register = Declarations.register
 
 class OneField(Field):
     pass
+
+
+FIELDS = [
+    pytest.param(
+        (Function, dict(fget="fget", fset="fset", fdel="fdel", fexpr="fexpr", fuexpr="fuexpr")),
+        id="Function",
+    ),
+    pytest.param(
+        (JsonRelated, dict(json_column="properties", keys="['name']", as_type="string")),
+        id="JsonRelated",
+    ),
+]
+
+
+@pytest.fixture(params=FIELDS)
+def field_definition(request):
+    return request.param
 
 
 class TestField:
@@ -33,6 +51,17 @@ class TestField:
         field = OneField()
         field.get_sqlalchemy_mapping(None, None, "a_field", None)
         assert field.label == "A field"
+
+    def test_cache(self, field_definition):
+        field, kwargs = field_definition
+        f1 = field(**kwargs)
+        cache1 = f1.to_cache()
+        f2 = cache_to_instance(cache1)
+        cache2 = f2.to_cache()
+        assert cache1 == cache2
+        assert f1.args == f2.args
+        assert f1.kwargs == f2.kwargs
+        assert f1.info == f2.info
 
 
 def define_field_function():
@@ -209,10 +238,6 @@ class TestJsonRelated:
         t.name = "jssuzanne"
         assert t.properties == {"name": "jssuzanne"}
 
-    # @pytest.mark.skipif(
-    #     sgdb_in(["MariaDB", "MsSQL"]),
-    #     reason="JSON is not existing in this SGDB",
-    # )
     def test_field_json_related_exp_1(self, registry_json_related):
         registry = registry_json_related
         Test = registry.Test

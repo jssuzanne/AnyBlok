@@ -7,7 +7,7 @@
 # obtain one at http://mozilla.org/MPL/2.0/.
 from sqlalchemy.ext.hybrid import hybrid_property
 
-from anyblok.common import anyblok_column_prefix
+from anyblok.common import anyblok_column_prefix, CachableType
 from anyblok.mapper import ModelRepr
 
 from .declarations import Declarations
@@ -17,7 +17,7 @@ class FieldException(Exception):
     """Simple Exception for Field"""
 
 
-class Field:
+class Field(CachableType):
     """Field class
 
     This class must not be instanciated

@@ -35,12 +35,16 @@ logger = getLogger(__name__)
 Configuration.add_application_properties(
     "createdb",
     [
+        "config", 
+        "database", 
         "unittest",
         "logging",
         "create_db",
         "install-bloks",
         "install-or-update-bloks",
+        "cache-assembly",
     ],
+    add_default_group=False,
     prog="AnyBlok create database, version %r" % version,
     description="Create a database and install bloks to populate it",
 )
@@ -48,20 +52,24 @@ Configuration.add_application_properties(
 Configuration.add_application_properties(
     "updatedb",
     [
+        "config", 
+        "database", 
         "unittest",
         "logging",
         "install-bloks",
         "uninstall-bloks",
         "update-bloks",
         "install-or-update-bloks",
+        "cache-assembly",
     ],
+    add_default_group=False,
     prog="AnyBlok update database, version %r" % version,
     description="Update a database: install, upgrade or uninstall the bloks ",
 )
 
 Configuration.add_application_properties(
     "interpreter",
-    ["logging", "interpreter"],
+    ["logging", "interpreter", "cache-assembly", "use-cache-assembly"],
     prog="AnyBlok interpreter, version %r" % version,
     description="Run an interpreter on the registry",
     formatter_class=RawDescriptionHelpFormatter,
@@ -100,8 +108,9 @@ def anyblok_createdb():
     load_init_function_from_entry_points()
     Configuration.load("createdb")
     configuration_post_load()
-    BlokManager.load()
     db_name = get_db_name()
+    RegistryManager.clear_cache(db_name)
+    BlokManager.load()
 
     db_template_name = Configuration.get("db_template_name", None)
     url = get_url(db_name=db_name)
@@ -128,7 +137,7 @@ def anyblok_createdb():
 
 def anyblok_updatedb():
     """Update an existing database"""
-    anyblok_registry = anyblok.start("updatedb", loadwithoutmigration=True)
+    anyblok_registry = anyblok.start("updatedb")
 
     installed_bloks = anyblok_registry.System.Blok.list_by_state("installed")
     toupdate_bloks = anyblok_registry.System.Blok.list_by_state("toupdate")

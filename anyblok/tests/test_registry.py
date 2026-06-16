@@ -173,6 +173,7 @@ class TestRegistry:
             db_name,
             "--db-driver-name",
             db_driver_name,
+            "--not-use-cache-assembly"
         ]
         with patch.object(sys, "argv", testargs):
             registry = start("default")

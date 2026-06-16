@@ -18,6 +18,7 @@ from .schema import (  # noqa
     CheckConstraint,
     Index,
 )
+from pathlib import Path
 
 
 logger = getLogger(__name__)
@@ -85,7 +86,6 @@ def start(
     processName,
     entry_points=None,
     useseparator=False,
-    loadwithoutmigration=None,
     config=None,
     **kwargs,
 ):
@@ -100,7 +100,6 @@ def start(
     :param entry_points: entry point where load blok
     :param useseparator: boolean, indicate if configuration option are split
         betwwen two application
-    :param loadwithoutmigration: if True, any migration operation will do
     :param config: dict of configuration parameters
     :rtype: registry if the database name is in the configuration
     """
@@ -113,16 +112,18 @@ def start(
         config = {}
 
     Configuration.load(processName, useseparator=useseparator, **config)
-    if loadwithoutmigration is None:
-        loadwithoutmigration = Configuration.get('withoutautomigration')
 
     configuration_post_load()
-    if entry_points:
-        BlokManager.load(entry_points=entry_points)  # pragma: no cover
-    else:
-        BlokManager.load()
-
     db_name = Configuration.get("db_name")
+    use_cache_assembly = bool(Configuration.get('use_cache_assembly', 'True'))
+    cache_path = Path(
+        Configuration.get('cache_assembly_dir', '.')) / f"{db_name}.bin"
+    if not (use_cache_assembly and cache_path.exists()):
+        if entry_points:
+            BlokManager.load(entry_points=entry_points)  # pragma: no cover
+        else:
+            BlokManager.load()
+
     logger.debug("start(): db_name=%r", db_name)
     if not db_name:
         logger.warning(
@@ -130,9 +131,7 @@ def start(
         )
         return None  # pragma: no cover
 
-    registry = RegistryManager.get(
-        db_name, loadwithoutmigration=loadwithoutmigration, **kwargs
-    )
+    registry = RegistryManager.get(db_name, **kwargs)
     registry.commit()
     return registry
 

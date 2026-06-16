@@ -32,6 +32,7 @@ from os.path import isfile, join
 import yaml
 from appdirs import AppDirs
 from sqlalchemy.engine.url import URL, make_url
+from anyblok.common import path_to_class
 
 from .logging import log
 
@@ -304,15 +305,7 @@ def AnyBlokPlugin(import_definition):
     :param import_definition: string of the object to import
     :rtype: imported object
     """
-    if not isinstance(import_definition, str):
-        return import_definition
-
-    import_path, import_name = import_definition.split(":")
-    module = __import__(import_path, fromlist=[import_name])
-    if hasattr(module, import_name):
-        return getattr(module, import_name)
-
-    raise ImportError("%s does not exist in %s" % (import_name, import_path))
+    return path_to_class(import_definition)
 
 
 class ConfigOption:
@@ -384,7 +377,12 @@ class Configuration:
     applications = {
         "default": {
             "description": "[options] -- other arguments",
-            "configuration_groups": ["config", "database"],
+            "configuration_groups": [
+                "config", 
+                "database", 
+                "cache-assembly",
+                "not-use-cache-assembly",
+            ],
         },
     }
 
@@ -842,11 +840,6 @@ def add_configuration_file(parser):
         help="Relative path of the config file",
     )
     parser.add_argument(
-        "--without-auto-migration",
-        dest="withoutautomigration",
-        action="store_true",
-    )
-    parser.add_argument(
         "--ignore-migration-for-models",
         nargs="+",
         help="Models ignored by the migration",
@@ -1090,6 +1083,34 @@ def add_logging(group):
         help="Relative path of the logging config file (yaml). "
         "Only if the logging and json config file doesn't "
         "filled",
+    )
+
+
+@Configuration.add("cache-assembly", label="Cache assembly")
+def define_cache_option_1(group):
+    group.add_argument(
+        "--cache-assembly-dir",
+        default=os.environ.get("ANYBLOK_CACHE_ASSEMBLY_DIR", '/tmp/anyblok_caches'),
+        help="Relative path of the caches",
+    )
+
+
+@Configuration.add("use-cache-assembly", label="Cache assembly")
+def define_cache_option_2(group):
+    group.add_argument(
+        "--use-cache-assembly", action="store_true",
+        dest="use_cache_assembly",
+        help="Use cache assembly",
+    )
+
+
+@Configuration.add("not-use-cache-assembly", label="Cache assembly")
+def define_cache_option_3(group):
+    group.add_argument(
+        "--not-use-cache-assembly", 
+        action="store_false",
+        dest="use_cache_assembly",
+        help="Don't use cache assembly",
     )
 
 

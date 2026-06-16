@@ -621,7 +621,13 @@ class TestConfiguration:
         assert Configuration.applications[
             "test_add_application_properties"
         ] == {
-            "configuration_groups": ["config", "database", "logging"],
+            "configuration_groups": [
+                "config", 
+                "database", 
+                'cache-assembly',
+                'not-use-cache-assembly',
+                "logging"
+            ],
             "description": "Just a test",
         }
 

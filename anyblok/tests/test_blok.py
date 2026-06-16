@@ -962,24 +962,3 @@ class TestBlokInstallLifeCycle:
             "uninstall_demo",
             "uninstall",
         ]
-
-    def test_update_loadwithoutmigration(self, registry_blok16_installed):
-        registry = registry_blok16_installed
-        registry.loadwithoutmigration = True
-        registry.System.Parameter.set("with-demo", True)
-        registry.upgrade(update=("test-blok16",))
-        blok = BlokManager.get("test-blok16")
-        assert blok.called_methods == []
-
-    def test_update_withoutautomigration(self, registry_blok16_installed):
-        registry = registry_blok16_installed
-        registry.withoutautomigration = True
-        registry.System.Parameter.set("with-demo", True)
-        registry.upgrade(update=("test-blok16",))
-        blok = BlokManager.get("test-blok16")
-        assert blok.called_methods == [
-            "pre_migration",
-            "post_migration",
-            "update",
-            "update_demo",
-        ]
